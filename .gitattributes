@@ -1,0 +1,13 @@
+﻿# Normalização de final de linha
+* text=auto
+
+# Markdown
+*.md text eol=lf
+
+# Arduino
+*.ino text eol=lf
+*.h text eol=lf
+*.cpp text eol=lf
+
+# PowerShell
+*.ps1 text eol=crlf

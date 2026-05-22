@@ -1,0 +1,51 @@
+﻿# Arduino / build
+*.hex
+*.elf
+*.eep
+*.map
+*.bin
+
+# VSCode
+.vscode/*
+!.vscode/extensions.json
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Backups temporários
+*.bak
+*.tmp
+*.log
+*.old
+*.orig
+
+# Pastas de build
+build/
+dist/
+out/
+
+# Arquivos sensíveis
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+credentials.*
+secrets/
+private/
+.local/
+dados-privados/
+documentos-privados/
+
+# Arquivos comerciais privados
+custos-internos/
+precificacao-privada/
+fornecedores-privados/
+clientes/
+pedidos/
+vendas/
+notas-fiscais/
