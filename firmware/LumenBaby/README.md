@@ -10,6 +10,17 @@ O arquivo principal é:
 
 Arduino Pro Mini 5V / 16 MHz.
 
+## Compilação no Arduino IDE
+
+Para validar a compilação, abrir diretamente o arquivo `LumenBaby.ino` no
+Arduino IDE.
+
+Selecionar uma placa compatível com Arduino Pro Mini e o processador equivalente
+a ATmega328P 5V / 16 MHz.
+
+Nesta etapa, usar apenas Verificar/Compilar. Não usar Upload/Carregar e não
+conectar hardware físico.
+
 ## Objetivo do firmware
 
 Criar uma base inicial segura, simples e didática para controlar a luminária
