@@ -145,6 +145,123 @@ Observações: o modo respiração 4-7-8 funcionou corretamente, com subida suav
 em 4 segundos, sustentação por 7 segundos e descida suave em 8 segundos. O LED
 não atingiu brilho máximo absoluto e não apagou totalmente.
 
+## Teste complementar da Etapa 05B
+
+Este complemento deve ser testado por Rafael após compilar e carregar o
+firmware da Etapa 05B, mantendo a mesma montagem com MOSFET IRLZ44N, LED simples
+e resistor de 1 kΩ.
+
+Não conectar fita LED 12 V, MT3608, TP4056, baterias 18650, fonte externa de
+12 V ou qualquer carga de potência neste complemento.
+
+### Controle de brilho automático por toque curto
+
+Entrar no modo automático, deixar o ambiente escuro no LDR e aplicar toques
+curtos no botão D3.
+
+Resultado: aprovado.
+
+Observações: no modo automático com LDR escuro, toques curtos no botão D3
+alteraram corretamente os níveis de brilho automático.
+
+### Controle de brilho automático por pressionar e segurar
+
+No modo automático, manter o ambiente escuro no LDR e pressionar/segurar o botão
+D3.
+
+- na primeira ação longa, verificar se o brilho sobe suavemente até o máximo;
+- soltar e pressionar novamente;
+- verificar se o brilho desce suavemente até o mínimo;
+- confirmar que o LED não apaga durante o ajuste.
+
+Resultado: aprovado.
+
+Observações: no modo automático com LDR escuro, pressionar e segurar o botão D3
+fez o brilho subir suavemente. Em nova ação de pressionar e segurar, o brilho
+desceu suavemente. O LED não apagou no brilho mínimo.
+
+### Ajuste de brilho automático com ambiente claro
+
+Clarear o LDR, confirmar que o LED permanece apagado e ajustar o brilho
+automático usando toque curto e pressionar/segurar no botão D3.
+
+Resultado: aprovado.
+
+Observações: com o LDR em condição de ambiente claro, o LED permaneceu apagado.
+Mesmo assim, o botão D3 alterou internamente o alvo/índice automático para uso
+na próxima condição de ambiente escuro.
+
+### Acendimento até o brilho automático selecionado
+
+Após ajustar o brilho automático com o ambiente claro, escurecer o LDR e
+verificar se, após o atraso, o LED acende com fade-in até o brilho automático
+selecionado.
+
+Resultado: aprovado.
+
+Observações: após ajustar o brilho automático com o ambiente claro, ao escurecer
+o LDR o LED acendeu com fade-in até o nível automático selecionado.
+
+### Fade-in, fade-out e cancelamento continuam funcionando
+
+Repetir os testes de escurecer, clarear e cancelar uma transição pendente,
+confirmando que o atraso de aproximadamente 1 segundo, o fade-in, o fade-out e a
+histerese continuam funcionando no modo automático.
+
+Resultado: aprovado.
+
+Observações: o atraso de aproximadamente 1 segundo, o fade-in, o fade-out, a
+histerese e o cancelamento de transição pendente continuaram funcionando no modo
+automático após a inclusão do controle de brilho.
+
+Checklist complementar da Etapa 05B:
+
+- [x] Toque curto no modo automático testado.
+- [x] Pressionar/segurar no modo automático testado.
+- [x] LED permanece apagado no claro ao ajustar brilho automático.
+- [x] LED acende no escuro até o brilho automático selecionado.
+- [x] Fade-in e fade-out do modo automático continuam funcionando.
+- [x] Cancelamento de transição pendente continua funcionando.
+- [x] Teste complementar feito apenas com MOSFET e LED simples.
+
+Registro complementar da Etapa 05B:
+
+Data do teste complementar: não registrada nesta validação
+
+Responsável: Rafael
+
+Versão do Arduino IDE: não registrada nesta validação
+
+Placa selecionada: não registrada nesta validação
+
+Processador selecionado: não registrado nesta validação
+
+Resultado complementar: aprovado. O controle de brilho no modo automático foi
+validado como funcionando 100% com MOSFET IRLZ44N, LED simples e resistor de
+1 kΩ.
+
+Observações complementares:
+
+- O modo automático agora permite ajuste de brilho pelo botão D3.
+- No modo automático com LDR escuro, toque curto em D3 altera os níveis de
+  brilho.
+- No modo automático com LDR escuro, pressionar e segurar sobe suavemente o
+  brilho, e uma nova ação longa desce suavemente.
+- O LED não apaga no brilho mínimo durante o ajuste automático.
+- No modo automático com LDR claro, o LED permanece apagado, mas o botão D3
+  altera o alvo/índice automático.
+- Após ajuste no claro, ao escurecer o LDR, o LED acende com fade até o nível
+  automático selecionado.
+- O atraso de aproximadamente 1 segundo, fade-in, fade-out, histerese e
+  cancelamento de transição pendente continuam funcionando.
+- O modo manual continua funcionando.
+- O modo respiração 4-7-8 continua funcionando.
+- `LED_PWM_OUTPUT_INVERTED = false` permanece correto.
+- O mapa de pinos não foi alterado.
+- O teste continuou limitado a MOSFET IRLZ44N, LED simples e resistor de 1 kΩ.
+- Fita LED 12 V, MT3608, TP4056, baterias 18650, fonte externa de 12 V e carga
+  de potência ainda não foram validados.
+
 ## Registro do resultado
 
 Data do teste: não registrada nesta validação

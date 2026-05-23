@@ -31,8 +31,10 @@
   - refinado em 2026 para validações iniciais com Arduino Pro Mini, LDR, botões,
     MOSFET e LED simples.
 
-  Este projeto é público para fins educacionais e documentais. Ver LICENSE.md
-  para detalhes.
+  Este projeto é público para fins educacionais e documentais, sob a
+  LumenBABY Source Available License. Todos os direitos reservados.
+  Uso comercial, fabricação, redistribuição ou venda de produtos derivados
+  somente com autorização prévia por escrito. Ver LICENSE.md para detalhes.
 
   Repositório:
   https://github.com/laboratoriodecircuitos/lumenbaby
@@ -63,15 +65,14 @@ const unsigned long DEBOUNCE_TIME_MS = 40;
 // A histerese evita alternância quando a leitura fica perto do limite.
 const int LDR_DARK_THRESHOLD = 450;
 const int LDR_LIGHT_THRESHOLD = 600;
-const byte AUTOMATIC_BRIGHTNESS = 180;
 const unsigned long AUTOMATIC_RESPONSE_DELAY_MS = 1000;
 const unsigned long AUTOMATIC_FADE_DURATION_MS = 1000;
 
-const byte MANUAL_BRIGHTNESS_LEVELS[] = {
+const byte BRIGHTNESS_LEVELS[] = {
   25, 50, 75, 100, 125, 150, 175, 200, 225, 255
 };
-const byte MANUAL_BRIGHTNESS_LEVEL_COUNT =
-  sizeof(MANUAL_BRIGHTNESS_LEVELS) / sizeof(MANUAL_BRIGHTNESS_LEVELS[0]);
+const byte BRIGHTNESS_LEVEL_COUNT =
+  sizeof(BRIGHTNESS_LEVELS) / sizeof(BRIGHTNESS_LEVELS[0]);
 const unsigned long MANUAL_LEVEL_FADE_DURATION_MS = 350;
 const unsigned long MANUAL_SHORT_PRESS_MAX_MS = 600;
 const unsigned long MANUAL_HOLD_START_MS = 600;
@@ -138,10 +139,12 @@ DebouncedButton brightnessButton = {
 };
 
 byte manualBrightnessIndex = 5;
-bool manualHoldActive = false;
-bool manualHoldWasActiveOnThisPress = false;
-int manualHoldDirection = 1;
-unsigned long lastManualHoldStepTime = 0;
+byte automaticBrightnessIndex = 6;
+bool brightnessHoldActive = false;
+bool brightnessHoldWasActiveOnThisPress = false;
+int brightnessHoldDirection = 1;
+byte brightnessHoldValue = 0;
+unsigned long lastBrightnessHoldStepTime = 0;
 
 byte currentLedBrightness = 0;  // Brilho lógico: 0 sempre significa apagado.
 byte currentPhysicalPwmOutput = 0;
@@ -173,10 +176,17 @@ void updateButton(DebouncedButton &button);
 void clearButtonEvents(DebouncedButton &button);
 void handleModeButtonPressed();
 void handleBrightnessButtonReleased();
-void handleBrightnessButtonPressed();
-void updateManualButtonHold();
-void resetManualHoldState();
-byte findNearestManualBrightnessIndex(byte brightness);
+void handleBrightnessButtonShortPress();
+void handleManualBrightnessShortPress();
+void handleAutomaticBrightnessShortPress();
+void updateBrightnessButtonHold();
+void resetBrightnessHoldState();
+bool isBrightnessControlMode();
+byte getAutomaticTargetBrightness();
+byte getBrightnessHoldStartValue();
+void applyBrightnessHoldValue(byte brightness);
+void syncActiveBrightnessIndex(byte brightness);
+byte findNearestBrightnessIndex(byte brightness);
 void requestLedBrightness(byte targetBrightness, unsigned long durationMs);
 void updateLedFade();
 byte easeInOutByte(unsigned long elapsedMs, unsigned long durationMs);
@@ -230,7 +240,7 @@ void setupDebugSerial() {
     Serial.begin(SERIAL_BAUD_RATE);
     debugSerialReady = true;
     Serial.println(F("LumenBABY diagnostico Serial ativo."));
-    Serial.println(F("Etapa 05: refinamento dos efeitos com LED simples."));
+    Serial.println(F("Etapa 05B: brilho ajustavel tambem no modo automatico."));
     Serial.println(F("Sem fita LED, MT3608, TP4056, baterias ou fonte externa."));
     Serial.println(F("Botoes: INPUT_PULLUP, pressionado = LOW."));
     Serial.println(F("Saida PWM D9: normal."));
@@ -315,32 +325,40 @@ void handleModeButtonPressed() {
 }
 
 void handleBrightnessButtonReleased() {
-  if (currentMode != MODE_MANUAL) {
-    resetManualHoldState();
+  if (!isBrightnessControlMode()) {
+    resetBrightnessHoldState();
     return;
   }
 
-  if (manualHoldWasActiveOnThisPress) {
-    manualHoldDirection = -manualHoldDirection;
-    manualBrightnessIndex = findNearestManualBrightnessIndex(currentLedBrightness);
-    resetManualHoldState();
+  if (brightnessHoldWasActiveOnThisPress) {
+    brightnessHoldDirection = -brightnessHoldDirection;
+    syncActiveBrightnessIndex(brightnessHoldValue);
+    resetBrightnessHoldState();
     return;
   }
 
   if (brightnessButton.lastPressDuration < MANUAL_SHORT_PRESS_MAX_MS) {
-    handleBrightnessButtonPressed();
+    handleBrightnessButtonShortPress();
   }
 }
 
-void handleBrightnessButtonPressed() {
+void handleBrightnessButtonShortPress() {
+  if (currentMode == MODE_AUTO) {
+    handleAutomaticBrightnessShortPress();
+  } else if (currentMode == MODE_MANUAL) {
+    handleManualBrightnessShortPress();
+  }
+}
+
+void handleManualBrightnessShortPress() {
   manualBrightnessIndex++;
 
-  if (manualBrightnessIndex >= MANUAL_BRIGHTNESS_LEVEL_COUNT) {
+  if (manualBrightnessIndex >= BRIGHTNESS_LEVEL_COUNT) {
     manualBrightnessIndex = 0;
   }
 
   requestLedBrightness(
-    MANUAL_BRIGHTNESS_LEVELS[manualBrightnessIndex],
+    BRIGHTNESS_LEVELS[manualBrightnessIndex],
     MANUAL_LEVEL_FADE_DURATION_MS
   );
 
@@ -350,7 +368,29 @@ void handleBrightnessButtonPressed() {
   }
 }
 
-void updateManualButtonHold() {
+void handleAutomaticBrightnessShortPress() {
+  automaticBrightnessIndex++;
+
+  if (automaticBrightnessIndex >= BRIGHTNESS_LEVEL_COUNT) {
+    automaticBrightnessIndex = 0;
+  }
+
+  byte targetBrightness = getAutomaticTargetBrightness();
+  lastAutomaticTargetBrightness = targetBrightness;
+
+  if (automaticStableEnvironmentDark) {
+    requestLedBrightness(targetBrightness, MANUAL_LEVEL_FADE_DURATION_MS);
+  }
+
+  if (debugSerialReady) {
+    Serial.print(F("Nivel automatico: "));
+    Serial.print(automaticBrightnessIndex);
+    Serial.print(F(" | Alvo automatico: "));
+    Serial.println(targetBrightness);
+  }
+}
+
+void updateBrightnessButtonHold() {
   if (!brightnessButton.isPressed) {
     return;
   }
@@ -362,47 +402,93 @@ void updateManualButtonHold() {
     return;
   }
 
-  if (!manualHoldActive) {
-    manualHoldActive = true;
-    manualHoldWasActiveOnThisPress = true;
-    lastManualHoldStepTime = 0;
-    cancelLedFade();
+  if (!brightnessHoldActive) {
+    brightnessHoldActive = true;
+    brightnessHoldWasActiveOnThisPress = true;
+    brightnessHoldValue = getBrightnessHoldStartValue();
+    lastBrightnessHoldStepTime = 0;
+
+    if (currentMode == MODE_MANUAL || automaticStableEnvironmentDark) {
+      cancelLedFade();
+    }
   }
 
-  if ((now - lastManualHoldStepTime) < MANUAL_HOLD_STEP_TIME_MS) {
+  if ((now - lastBrightnessHoldStepTime) < MANUAL_HOLD_STEP_TIME_MS) {
     return;
   }
 
-  lastManualHoldStepTime = now;
+  lastBrightnessHoldStepTime = now;
 
   int nextBrightness =
-    currentLedBrightness + (manualHoldDirection * MANUAL_HOLD_STEP_AMOUNT);
+    brightnessHoldValue + (brightnessHoldDirection * MANUAL_HOLD_STEP_AMOUNT);
 
-  if (nextBrightness > MANUAL_BRIGHTNESS_LEVELS[MANUAL_BRIGHTNESS_LEVEL_COUNT - 1]) {
-    nextBrightness = MANUAL_BRIGHTNESS_LEVELS[MANUAL_BRIGHTNESS_LEVEL_COUNT - 1];
+  if (nextBrightness > BRIGHTNESS_LEVELS[BRIGHTNESS_LEVEL_COUNT - 1]) {
+    nextBrightness = BRIGHTNESS_LEVELS[BRIGHTNESS_LEVEL_COUNT - 1];
   }
 
-  if (nextBrightness < MANUAL_BRIGHTNESS_LEVELS[0]) {
-    nextBrightness = MANUAL_BRIGHTNESS_LEVELS[0];
+  if (nextBrightness < BRIGHTNESS_LEVELS[0]) {
+    nextBrightness = BRIGHTNESS_LEVELS[0];
   }
 
-  applyLedBrightness(nextBrightness);
+  brightnessHoldValue = nextBrightness;
+  applyBrightnessHoldValue(brightnessHoldValue);
 }
 
-void resetManualHoldState() {
-  manualHoldActive = false;
-  manualHoldWasActiveOnThisPress = false;
+void resetBrightnessHoldState() {
+  brightnessHoldActive = false;
+  brightnessHoldWasActiveOnThisPress = false;
   clearButtonEvents(brightnessButton);
 }
 
-byte findNearestManualBrightnessIndex(byte brightness) {
+bool isBrightnessControlMode() {
+  return currentMode == MODE_AUTO || currentMode == MODE_MANUAL;
+}
+
+byte getAutomaticTargetBrightness() {
+  return BRIGHTNESS_LEVELS[automaticBrightnessIndex];
+}
+
+byte getBrightnessHoldStartValue() {
+  if (currentMode == MODE_AUTO && !automaticStableEnvironmentDark) {
+    return getAutomaticTargetBrightness();
+  }
+
+  return currentLedBrightness;
+}
+
+void applyBrightnessHoldValue(byte brightness) {
+  if (currentMode == MODE_AUTO) {
+    automaticBrightnessIndex = findNearestBrightnessIndex(brightness);
+    lastAutomaticTargetBrightness = getAutomaticTargetBrightness();
+
+    if (automaticStableEnvironmentDark) {
+      applyLedBrightness(brightness);
+    }
+
+    return;
+  }
+
+  applyLedBrightness(brightness);
+}
+
+void syncActiveBrightnessIndex(byte brightness) {
+  if (currentMode == MODE_AUTO) {
+    automaticBrightnessIndex = findNearestBrightnessIndex(brightness);
+    lastAutomaticTargetBrightness = getAutomaticTargetBrightness();
+    return;
+  }
+
+  manualBrightnessIndex = findNearestBrightnessIndex(brightness);
+}
+
+byte findNearestBrightnessIndex(byte brightness) {
   byte nearestIndex = 0;
   int nearestDistance = 300;
 
-  for (byte i = 0; i < MANUAL_BRIGHTNESS_LEVEL_COUNT; i++) {
-    int distance = brightness > MANUAL_BRIGHTNESS_LEVELS[i]
-      ? brightness - MANUAL_BRIGHTNESS_LEVELS[i]
-      : MANUAL_BRIGHTNESS_LEVELS[i] - brightness;
+  for (byte i = 0; i < BRIGHTNESS_LEVEL_COUNT; i++) {
+    int distance = brightness > BRIGHTNESS_LEVELS[i]
+      ? brightness - BRIGHTNESS_LEVELS[i]
+      : BRIGHTNESS_LEVELS[i] - brightness;
 
     if (distance < nearestDistance) {
       nearestDistance = distance;
@@ -495,7 +581,7 @@ void updateCurrentMode() {
 }
 
 void handleModeChanged() {
-  resetManualHoldState();
+  resetBrightnessHoldState();
 
   if (currentMode == MODE_AUTO) {
     resetAutomaticModeState();
@@ -506,13 +592,14 @@ void handleModeChanged() {
     currentBreathingPhase = BREATHING_PHASE_INHALE;
   } else {
     requestLedBrightness(
-      MANUAL_BRIGHTNESS_LEVELS[manualBrightnessIndex],
+      BRIGHTNESS_LEVELS[manualBrightnessIndex],
       MANUAL_LEVEL_FADE_DURATION_MS
     );
   }
 }
 
 void updateAutomaticMode() {
+  updateBrightnessButtonHold();
   updateAutomaticTarget();
 }
 
@@ -544,7 +631,7 @@ void updateAutomaticTarget() {
   automaticStableEnvironmentDark = environmentDark;
   automaticPendingTransition = false;
   lastAutomaticTargetBrightness = automaticStableEnvironmentDark
-    ? AUTOMATIC_BRIGHTNESS
+    ? getAutomaticTargetBrightness()
     : 0;
   requestLedBrightness(lastAutomaticTargetBrightness, AUTOMATIC_FADE_DURATION_MS);
 }
@@ -563,7 +650,7 @@ bool determineAutomaticEnvironmentDark(int ldrValue) {
 
 byte calculateAutomaticBrightness(int ldrValue) {
   if (isEnvironmentDark(ldrValue)) {
-    return AUTOMATIC_BRIGHTNESS;
+    return getAutomaticTargetBrightness();
   }
 
   return 0;
@@ -624,7 +711,7 @@ void updateBreathing478Mode() {
 }
 
 void updateManualMode() {
-  updateManualButtonHold();
+  updateBrightnessButtonHold();
 }
 
 void updateDebugSerial() {
@@ -688,8 +775,10 @@ void printDebugStatus() {
   if (currentMode == MODE_AUTO) {
     Serial.print(F(" | Auto: "));
     Serial.print(automaticStateName());
+    Serial.print(F(" | Auto indice: "));
+    Serial.print(automaticBrightnessIndex);
     Serial.print(F(" | Auto alvo: "));
-    Serial.print(lastAutomaticTargetBrightness);
+    Serial.print(getAutomaticTargetBrightness());
   }
 
   if (currentMode == MODE_BREATHING) {

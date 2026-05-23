@@ -95,6 +95,37 @@ terapêutico ou de segurança.
 Esta etapa ainda não valida fita LED 12 V, MT3608, TP4056, baterias 18650,
 fonte externa de 12 V ou carga de potência.
 
+## Refinamento da Etapa 05B
+
+Na Etapa 05B, o modo automático também passa a ter controle de brilho pelo
+botão D3.
+
+O LDR continua responsável por ligar e desligar a luz automaticamente:
+
+- ambiente claro: o LED permanece apagado;
+- ambiente escuro: o LED acende.
+
+A diferença é que o brilho usado quando o ambiente está escuro agora é
+selecionado pelo usuário. O modo automático usa a mesma escala de 10 níveis do
+modo manual:
+
+`25, 50, 75, 100, 125, 150, 175, 200, 225, 255`
+
+No modo automático, um toque curto no botão D3 avança o brilho alvo automático
+para o próximo nível. Ao chegar ao último nível, volta ao primeiro.
+
+Pressionar e segurar o botão D3 no modo automático ajusta o brilho suavemente
+para cima ou para baixo, alternando o sentido a cada nova ação longa. O ajuste
+não apaga o LED, pois respeita o brilho mínimo da escala.
+
+Quando o ambiente está claro, o LED continua apagado mesmo que o brilho
+automático seja ajustado. O novo nível fica salvo e será usado na próxima vez
+que o LDR detectar ambiente escuro.
+
+Quando o ambiente está escuro, a mudança de brilho é visível no LED. O fade-in
+e o fade-out do modo automático continuam funcionando com o atraso de
+aproximadamente 1 segundo antes da resposta à mudança claro/escuro.
+
 ## Objetivo do firmware
 
 Criar uma base inicial segura, simples e didática para controlar a luminária

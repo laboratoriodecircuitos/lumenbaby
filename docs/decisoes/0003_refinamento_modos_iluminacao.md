@@ -50,6 +50,25 @@ O modo respiração passa a usar um ciclo visual inspirado em 4-7-8:
 O brilho máximo do modo respiração fica abaixo do máximo absoluto, e o brilho
 mínimo permanece baixo, mas diferente de zero.
 
+## Complemento da Etapa 05B
+
+Na Etapa 05B, foi decidido permitir controle de brilho também no modo
+automático.
+
+O modo automático continua usando o LDR para decidir quando a luminária deve
+acender ou apagar. A função do LDR não muda: ambiente claro mantém o LED
+apagado, e ambiente escuro permite acendimento automático.
+
+A decisão complementar é que o usuário também deve poder escolher a intensidade
+desse acendimento automático. Para isso, o modo automático passa a ter um índice
+de brilho próprio, separado do índice do modo manual, usando a mesma tabela de
+10 níveis:
+
+`25, 50, 75, 100, 125, 150, 175, 200, 225, 255`
+
+Assim, o liga/desliga permanece automático pelo LDR, mas a intensidade usada no
+escuro respeita a escolha do usuário.
+
 ## Justificativa
 
 Esses refinamentos melhoram a experiência visual sem adicionar bibliotecas,
