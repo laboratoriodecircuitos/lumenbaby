@@ -8,6 +8,7 @@ Testes previstos:
 - teste controlado do Arduino sem carga de potência;
 - teste elétrico controlado do MOSFET com LED simples;
 - teste de refinamento dos efeitos de iluminação;
+- teste de persistência dos brilhos na EEPROM;
 - teste de leitura do LDR;
 - teste de PWM da fita LED;
 - teste de fade in e fade out;
@@ -25,6 +26,7 @@ Testes previstos:
 - [Teste 0002 — Validação controlada do Arduino sem carga de potência](0002_validacao_controlada_arduino_sem_carga.md)
 - [Teste 0003 — Validação elétrica controlada do MOSFET com LED simples](0003_validacao_mosfet_led_simples.md)
 - [Teste 0004 — Refinamento dos efeitos de iluminação](0004_refinamento_efeitos_iluminacao.md)
+- [Teste 0005 — Persistência dos brilhos na EEPROM](0005_persistencia_brilho_eeprom.md)
 
 Cada teste deve registrar:
 

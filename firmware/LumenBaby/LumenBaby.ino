@@ -40,6 +40,8 @@
   https://github.com/laboratoriodecircuitos/lumenbaby
 */
 
+#include <EEPROM.h>
+
 // ---------------------------------------------------------------------------
 // Configurações principais
 // ---------------------------------------------------------------------------
@@ -78,6 +80,16 @@ const unsigned long MANUAL_SHORT_PRESS_MAX_MS = 600;
 const unsigned long MANUAL_HOLD_START_MS = 600;
 const unsigned long MANUAL_HOLD_STEP_TIME_MS = 25;
 const byte MANUAL_HOLD_STEP_AMOUNT = 2;
+const byte DEFAULT_MANUAL_BRIGHTNESS_INDEX = 5;
+const byte DEFAULT_AUTOMATIC_BRIGHTNESS_INDEX = 6;
+
+const byte EEPROM_MAGIC = 0x4C;  // "L" de LumenBABY/LumenSense.
+const byte EEPROM_DATA_VERSION = 1;
+const int EEPROM_MAGIC_ADDRESS = 0;
+const int EEPROM_VERSION_ADDRESS = 1;
+const int EEPROM_AUTOMATIC_BRIGHTNESS_INDEX_ADDRESS = 2;
+const int EEPROM_MANUAL_BRIGHTNESS_INDEX_ADDRESS = 3;
+const unsigned long EEPROM_SAVE_DELAY_MS = 2000;
 
 // Efeito visual inspirado no ritmo 4-7-8: apenas referência visual.
 const byte BREATHING_MIN_BRIGHTNESS = 10;
@@ -138,13 +150,17 @@ DebouncedButton brightnessButton = {
   false
 };
 
-byte manualBrightnessIndex = 5;
-byte automaticBrightnessIndex = 6;
+byte manualBrightnessIndex = DEFAULT_MANUAL_BRIGHTNESS_INDEX;
+byte automaticBrightnessIndex = DEFAULT_AUTOMATIC_BRIGHTNESS_INDEX;
 bool brightnessHoldActive = false;
 bool brightnessHoldWasActiveOnThisPress = false;
 int brightnessHoldDirection = 1;
 byte brightnessHoldValue = 0;
+byte brightnessHoldStartIndex = 0;
 unsigned long lastBrightnessHoldStepTime = 0;
+
+bool brightnessSettingsSavePending = false;
+unsigned long brightnessSettingsSaveRequestTime = 0;
 
 byte currentLedBrightness = 0;  // Brilho lógico: 0 sempre significa apagado.
 byte currentPhysicalPwmOutput = 0;
@@ -170,6 +186,11 @@ unsigned long lastDebugReportTime = 0;
 
 void setupPins();
 void setupDebugSerial();
+void loadBrightnessSettingsFromEeprom();
+void scheduleBrightnessSettingsSave();
+void updateBrightnessSettingsSave();
+void saveBrightnessSettingsToEeprom();
+bool isValidBrightnessIndex(byte index);
 int readLdr();
 void updateButtons();
 void updateButton(DebouncedButton &button);
@@ -212,6 +233,7 @@ const __FlashStringHelper *automaticStateName();
 void setup() {
   setupPins();
   setupDebugSerial();
+  loadBrightnessSettingsFromEeprom();
   resetAutomaticModeState();
 
   if (debugSerialReady) {
@@ -223,6 +245,7 @@ void loop() {
   updateButtons();
   updateCurrentMode();
   updateLedFade();
+  updateBrightnessSettingsSave();
   updateDebugSerial();
 }
 
@@ -240,11 +263,98 @@ void setupDebugSerial() {
     Serial.begin(SERIAL_BAUD_RATE);
     debugSerialReady = true;
     Serial.println(F("LumenBABY diagnostico Serial ativo."));
-    Serial.println(F("Etapa 05B: brilho ajustavel tambem no modo automatico."));
+    Serial.println(F("Etapa 06: brilho manual e automatico persistidos na EEPROM."));
     Serial.println(F("Sem fita LED, MT3608, TP4056, baterias ou fonte externa."));
     Serial.println(F("Botoes: INPUT_PULLUP, pressionado = LOW."));
     Serial.println(F("Saida PWM D9: normal."));
   }
+}
+
+void loadBrightnessSettingsFromEeprom() {
+  byte storedMagic = EEPROM.read(EEPROM_MAGIC_ADDRESS);
+  byte storedVersion = EEPROM.read(EEPROM_VERSION_ADDRESS);
+  byte storedAutomaticBrightnessIndex =
+    EEPROM.read(EEPROM_AUTOMATIC_BRIGHTNESS_INDEX_ADDRESS);
+  byte storedManualBrightnessIndex =
+    EEPROM.read(EEPROM_MANUAL_BRIGHTNESS_INDEX_ADDRESS);
+
+  bool storedSettingsValid =
+    storedMagic == EEPROM_MAGIC &&
+    storedVersion == EEPROM_DATA_VERSION &&
+    isValidBrightnessIndex(storedAutomaticBrightnessIndex) &&
+    isValidBrightnessIndex(storedManualBrightnessIndex);
+
+  if (storedSettingsValid) {
+    automaticBrightnessIndex = storedAutomaticBrightnessIndex;
+    manualBrightnessIndex = storedManualBrightnessIndex;
+
+    if (debugSerialReady) {
+      Serial.print(F("EEPROM carregada. Auto indice: "));
+      Serial.print(automaticBrightnessIndex);
+      Serial.print(F(" | Manual indice: "));
+      Serial.println(manualBrightnessIndex);
+    }
+
+    return;
+  }
+
+  automaticBrightnessIndex = DEFAULT_AUTOMATIC_BRIGHTNESS_INDEX;
+  manualBrightnessIndex = DEFAULT_MANUAL_BRIGHTNESS_INDEX;
+  scheduleBrightnessSettingsSave();
+
+  if (debugSerialReady) {
+    Serial.print(F("EEPROM invalida ou vazia. Usando padroes. Auto indice: "));
+    Serial.print(automaticBrightnessIndex);
+    Serial.print(F(" | Manual indice: "));
+    Serial.println(manualBrightnessIndex);
+  }
+}
+
+void scheduleBrightnessSettingsSave() {
+  brightnessSettingsSavePending = true;
+  brightnessSettingsSaveRequestTime = millis();
+}
+
+void updateBrightnessSettingsSave() {
+  if (!brightnessSettingsSavePending) {
+    return;
+  }
+
+  unsigned long now = millis();
+
+  if (brightnessButton.isPressed || brightnessHoldActive) {
+    brightnessSettingsSaveRequestTime = now;
+    return;
+  }
+
+  if ((now - brightnessSettingsSaveRequestTime) < EEPROM_SAVE_DELAY_MS) {
+    return;
+  }
+
+  saveBrightnessSettingsToEeprom();
+}
+
+void saveBrightnessSettingsToEeprom() {
+  EEPROM.update(EEPROM_MAGIC_ADDRESS, EEPROM_MAGIC);
+  EEPROM.update(EEPROM_VERSION_ADDRESS, EEPROM_DATA_VERSION);
+  EEPROM.update(
+    EEPROM_AUTOMATIC_BRIGHTNESS_INDEX_ADDRESS,
+    automaticBrightnessIndex
+  );
+  EEPROM.update(EEPROM_MANUAL_BRIGHTNESS_INDEX_ADDRESS, manualBrightnessIndex);
+
+  brightnessSettingsSavePending = false;
+
+  if (debugSerialReady) {
+    Serial.print(F("EEPROM salva. Auto indice: "));
+    Serial.print(automaticBrightnessIndex);
+    Serial.print(F(" | Manual indice: "));
+    Serial.println(manualBrightnessIndex);
+  }
+}
+
+bool isValidBrightnessIndex(byte index) {
+  return index < BRIGHTNESS_LEVEL_COUNT;
 }
 
 int readLdr() {
@@ -333,6 +443,15 @@ void handleBrightnessButtonReleased() {
   if (brightnessHoldWasActiveOnThisPress) {
     brightnessHoldDirection = -brightnessHoldDirection;
     syncActiveBrightnessIndex(brightnessHoldValue);
+
+    byte finalBrightnessIndex = currentMode == MODE_AUTO
+      ? automaticBrightnessIndex
+      : manualBrightnessIndex;
+
+    if (finalBrightnessIndex != brightnessHoldStartIndex) {
+      scheduleBrightnessSettingsSave();
+    }
+
     resetBrightnessHoldState();
     return;
   }
@@ -361,6 +480,7 @@ void handleManualBrightnessShortPress() {
     BRIGHTNESS_LEVELS[manualBrightnessIndex],
     MANUAL_LEVEL_FADE_DURATION_MS
   );
+  scheduleBrightnessSettingsSave();
 
   if (debugSerialReady) {
     Serial.print(F("Nivel manual: "));
@@ -381,6 +501,7 @@ void handleAutomaticBrightnessShortPress() {
   if (automaticStableEnvironmentDark) {
     requestLedBrightness(targetBrightness, MANUAL_LEVEL_FADE_DURATION_MS);
   }
+  scheduleBrightnessSettingsSave();
 
   if (debugSerialReady) {
     Serial.print(F("Nivel automatico: "));
@@ -406,6 +527,9 @@ void updateBrightnessButtonHold() {
     brightnessHoldActive = true;
     brightnessHoldWasActiveOnThisPress = true;
     brightnessHoldValue = getBrightnessHoldStartValue();
+    brightnessHoldStartIndex = currentMode == MODE_AUTO
+      ? automaticBrightnessIndex
+      : manualBrightnessIndex;
     lastBrightnessHoldStepTime = 0;
 
     if (currentMode == MODE_MANUAL || automaticStableEnvironmentDark) {
@@ -437,6 +561,7 @@ void updateBrightnessButtonHold() {
 void resetBrightnessHoldState() {
   brightnessHoldActive = false;
   brightnessHoldWasActiveOnThisPress = false;
+  brightnessHoldStartIndex = 0;
   clearButtonEvents(brightnessButton);
 }
 
@@ -771,12 +896,12 @@ void printDebugStatus() {
 
   Serial.print(F(" | Manual indice: "));
   Serial.print(manualBrightnessIndex);
+  Serial.print(F(" | Auto indice: "));
+  Serial.print(automaticBrightnessIndex);
 
   if (currentMode == MODE_AUTO) {
     Serial.print(F(" | Auto: "));
     Serial.print(automaticStateName());
-    Serial.print(F(" | Auto indice: "));
-    Serial.print(automaticBrightnessIndex);
     Serial.print(F(" | Auto alvo: "));
     Serial.print(getAutomaticTargetBrightness());
   }

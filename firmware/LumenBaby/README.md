@@ -126,6 +126,32 @@ Quando o ambiente está escuro, a mudança de brilho é visível no LED. O fade-
 e o fade-out do modo automático continuam funcionando com o atraso de
 aproximadamente 1 segundo antes da resposta à mudança claro/escuro.
 
+## Persistência da Etapa 06
+
+Na Etapa 06, o firmware passa a salvar na EEPROM o último índice de brilho
+usado no modo automático e o último índice de brilho usado no modo manual.
+
+Os índices são independentes:
+
+- o modo automático usa `automaticBrightnessIndex`;
+- o modo manual usa `manualBrightnessIndex`.
+
+O firmware persiste apenas os índices da tabela de brilho, não os valores PWM
+físicos. Ao ligar, a EEPROM é validada por assinatura, versão e faixa dos
+índices. Se a EEPROM estiver vazia, corrompida ou com valores fora da faixa, o
+firmware usa padrões seguros:
+
+- modo automático: índice 6, brilho lógico 175;
+- modo manual: índice 5, brilho lógico 150.
+
+Para reduzir desgaste da EEPROM, o firmware não grava a cada passo de fade nem
+a cada incremento enquanto o botão de brilho está pressionado. Quando um ajuste
+termina e o índice final muda, a gravação fica pendente por aproximadamente
+2 segundos. A escrita usa `EEPROM.update()`, evitando regravar células que já
+tenham o mesmo valor.
+
+O modo respiração não altera nem salva índices de brilho na EEPROM.
+
 ## Objetivo do firmware
 
 Criar uma base inicial segura, simples e didática para controlar a luminária
