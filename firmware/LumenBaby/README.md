@@ -61,6 +61,40 @@ final do MOSFET e da iluminação.
 O limiar do LDR ainda deve ser calibrado observando leituras reais de ambiente
 claro e escuro. Ainda não houve validação com fita LED 12 V.
 
+## Refinamento da Etapa 05
+
+Na Etapa 05, os efeitos foram refinados para teste ainda com MOSFET e LED
+simples com resistor.
+
+O modo automático aguarda aproximadamente 1 segundo antes de responder a uma
+mudança entre claro e escuro. Se a condição permanecer válida, o firmware faz
+fade-in ou fade-out suave por aproximadamente 1 segundo.
+
+Para reduzir oscilações perto do limiar do LDR, o modo automático usa histerese
+simples: um limiar para considerar escuro e outro para voltar a claro. Durante
+fades, o relatório longo do debug Serial é pausado para evitar interferência na
+suavidade visual. Os limiares ainda devem ser calibrados na montagem final.
+
+O modo manual agora possui 10 níveis fixos de brilho lógico:
+
+`25, 50, 75, 100, 125, 150, 175, 200, 225, 255`
+
+Um toque curto no botão de brilho avança para o próximo nível. Ao pressionar e
+segurar o botão, o brilho sobe ou desce suavemente; o sentido alterna a cada
+novo pressionamento longo.
+
+O modo respiração passa a usar um ciclo visual inspirado em 4-7-8:
+
+- inspiração visual por 4 segundos;
+- retenção visual por 7 segundos;
+- expiração visual por 8 segundos.
+
+Esse ciclo é apenas um efeito visual. Não representa recurso médico,
+terapêutico ou de segurança.
+
+Esta etapa ainda não valida fita LED 12 V, MT3608, TP4056, baterias 18650,
+fonte externa de 12 V ou carga de potência.
+
 ## Objetivo do firmware
 
 Criar uma base inicial segura, simples e didática para controlar a luminária
@@ -91,22 +125,20 @@ Nesta etapa, o firmware implementa:
 
 Modo inicial do firmware.
 
-Nesta base, o Arduino lê o LDR e liga ou desliga os LEDs conforme um limite
-simples de luminosidade. O limite ainda deve ser ajustado em bancada.
+O Arduino lê o LDR e liga ou desliga os LEDs conforme um limite simples de
+luminosidade. O modo automático usa atraso de resposta e fade suave para evitar
+mudanças bruscas. O limite ainda deve ser ajustado em bancada.
 
 ### Modo respiração
 
-Varia o brilho dos LEDs lentamente, sem usar `delay()` longo.
+Varia o brilho dos LEDs lentamente em um ciclo visual inspirado em 4-7-8, sem
+usar `delay()` longo.
 
 ### Modo manual
 
-Permite alternar entre três níveis de brilho:
-
-- baixo;
-- médio;
-- alto.
-
-O botão de brilho só altera o nível quando o firmware está em modo manual.
+Permite alternar entre 10 níveis de brilho. O botão de brilho só altera o nível
+quando o firmware está em modo manual. Toque curto avança nível; pressionar e
+segurar ajusta o brilho suavemente para cima ou para baixo.
 
 ## Inicialização segura
 

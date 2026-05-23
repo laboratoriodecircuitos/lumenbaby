@@ -2,7 +2,7 @@
 // Marca: LumenSense
 // Plataforma alvo: Arduino Pro Mini 5V / 16 MHz
 //
-// Este arquivo é a base inicial segura e didática do firmware,
+// Este arquivo é a base segura e didática do firmware,
 // respeitando o documento:
 // ../../docs/00_DOCUMENTO_INICIAL_LUMENBABY.md
 
@@ -16,9 +16,8 @@ const unsigned long DEBUG_REPORT_INTERVAL_MS = 1000;
 
 // false = comportamento normal esperado para MOSFET N-channel low-side bem
 // montado, onde PWM maior aumenta brilho.
-// true = comportamento invertido/ativo-baixo observado nesta validação, onde
-// PWM físico menor aumenta brilho.
-// Revisar esta configuração após a validação elétrica final.
+// true = comportamento invertido/ativo-baixo, onde PWM físico menor aumenta
+// brilho. Revisar esta configuração após a validação elétrica final.
 const bool LED_PWM_OUTPUT_INVERTED = false;
 
 const byte LDR_PIN = A0;
@@ -26,21 +25,34 @@ const byte MODE_BUTTON_PIN = 2;
 const byte BRIGHTNESS_BUTTON_PIN = 3;
 const byte LED_PWM_PIN = 9;
 
-const byte MANUAL_BRIGHTNESS_LOW = 70;
-const byte MANUAL_BRIGHTNESS_MEDIUM = 140;
-const byte MANUAL_BRIGHTNESS_HIGH = 220;
-
 const unsigned long DEBOUNCE_TIME_MS = 40;
 
-// Limites iniciais para teste. O valor real deve ser ajustado em bancada,
-// porque depende da posição do LDR no divisor de tensão.
+// Limiares iniciais do LDR. A calibração fina será feita em etapa futura.
+// A histerese evita alternância quando a leitura fica perto do limite.
 const int LDR_DARK_THRESHOLD = 450;
+const int LDR_LIGHT_THRESHOLD = 600;
 const byte AUTOMATIC_BRIGHTNESS = 180;
+const unsigned long AUTOMATIC_RESPONSE_DELAY_MS = 1000;
+const unsigned long AUTOMATIC_FADE_DURATION_MS = 1000;
 
-// Parâmetros simples do modo respiração.
-const byte BREATHING_MIN_BRIGHTNESS = 20;
-const byte BREATHING_MAX_BRIGHTNESS = 180;
-const unsigned long BREATHING_STEP_TIME_MS = 20;
+const byte MANUAL_BRIGHTNESS_LEVELS[] = {
+  25, 50, 75, 100, 125, 150, 175, 200, 225, 255
+};
+const byte MANUAL_BRIGHTNESS_LEVEL_COUNT =
+  sizeof(MANUAL_BRIGHTNESS_LEVELS) / sizeof(MANUAL_BRIGHTNESS_LEVELS[0]);
+const unsigned long MANUAL_LEVEL_FADE_DURATION_MS = 350;
+const unsigned long MANUAL_SHORT_PRESS_MAX_MS = 600;
+const unsigned long MANUAL_HOLD_START_MS = 600;
+const unsigned long MANUAL_HOLD_STEP_TIME_MS = 25;
+const byte MANUAL_HOLD_STEP_AMOUNT = 2;
+
+// Efeito visual inspirado no ritmo 4-7-8: apenas referência visual.
+const byte BREATHING_MIN_BRIGHTNESS = 10;
+const byte BREATHING_MAX_BRIGHTNESS = 170;
+const unsigned long BREATHING_INHALE_MS = 4000;
+const unsigned long BREATHING_HOLD_MS = 7000;
+const unsigned long BREATHING_EXHALE_MS = 8000;
+const unsigned long BREATHING_UPDATE_INTERVAL_MS = 20;
 
 enum OperationMode {
   MODE_AUTO,
@@ -48,12 +60,22 @@ enum OperationMode {
   MODE_MANUAL
 };
 
+enum BreathingPhase {
+  BREATHING_PHASE_INHALE,
+  BREATHING_PHASE_HOLD,
+  BREATHING_PHASE_EXHALE
+};
+
 struct DebouncedButton {
   byte pin;
   bool stableState;
   bool lastReading;
+  bool isPressed;
   unsigned long lastChangeTime;
+  unsigned long pressedStartTime;
+  unsigned long lastPressDuration;
   bool pressedEvent;
+  bool releasedEvent;
 };
 
 OperationMode currentMode = MODE_AUTO;
@@ -63,7 +85,11 @@ DebouncedButton modeButton = {
   MODE_BUTTON_PIN,
   HIGH,
   HIGH,
+  false,
   0,
+  0,
+  0,
+  false,
   false
 };
 
@@ -71,56 +97,82 @@ DebouncedButton brightnessButton = {
   BRIGHTNESS_BUTTON_PIN,
   HIGH,
   HIGH,
+  false,
   0,
+  0,
+  0,
+  false,
   false
 };
 
-const byte manualBrightnessLevels[] = {
-  MANUAL_BRIGHTNESS_LOW,
-  MANUAL_BRIGHTNESS_MEDIUM,
-  MANUAL_BRIGHTNESS_HIGH
-};
+byte manualBrightnessIndex = 5;
+bool manualHoldActive = false;
+bool manualHoldWasActiveOnThisPress = false;
+int manualHoldDirection = 1;
+unsigned long lastManualHoldStepTime = 0;
 
-const byte MANUAL_BRIGHTNESS_LEVEL_COUNT =
-  sizeof(manualBrightnessLevels) / sizeof(manualBrightnessLevels[0]);
-
-byte manualBrightnessIndex = 1;
 byte currentLedBrightness = 0;  // Brilho lógico: 0 sempre significa apagado.
 byte currentPhysicalPwmOutput = 0;
+byte ledFadeStartBrightness = 0;
+byte ledFadeTargetBrightness = 0;
+unsigned long ledFadeStartTime = 0;
+unsigned long ledFadeDuration = 0;
+bool ledFadeActive = false;
 
-byte breathingBrightness = BREATHING_MIN_BRIGHTNESS;
-int breathingDirection = 1;
-unsigned long lastBreathingStepTime = 0;
-unsigned long lastDebugReportTime = 0;
-
+bool automaticStableEnvironmentDark = false;
+bool automaticPendingTransition = false;
+bool automaticPendingEnvironmentDark = false;
+unsigned long automaticPendingStartTime = 0;
 int lastAutomaticLdrValue = 0;
 bool lastAutomaticEnvironmentDark = false;
 byte lastAutomaticTargetBrightness = 0;
+
+unsigned long breathingCycleStartTime = 0;
+unsigned long lastBreathingUpdateTime = 0;
+BreathingPhase currentBreathingPhase = BREATHING_PHASE_INHALE;
+
+unsigned long lastDebugReportTime = 0;
 
 void setupPins();
 void setupDebugSerial();
 int readLdr();
 void updateButtons();
 void updateButton(DebouncedButton &button);
+void clearButtonEvents(DebouncedButton &button);
 void handleModeButtonPressed();
+void handleBrightnessButtonReleased();
 void handleBrightnessButtonPressed();
+void updateManualButtonHold();
+void resetManualHoldState();
+byte findNearestManualBrightnessIndex(byte brightness);
+void requestLedBrightness(byte targetBrightness, unsigned long durationMs);
+void updateLedFade();
+byte easeInOutByte(unsigned long elapsedMs, unsigned long durationMs);
+void cancelLedFade();
 void applyLedBrightness(byte brightness);
 byte logicalBrightnessToPhysicalPwm(byte logicalBrightness);
 void updateCurrentMode();
+void handleModeChanged();
 void updateAutomaticMode();
+void updateAutomaticTarget();
 bool isEnvironmentDark(int ldrValue);
+bool determineAutomaticEnvironmentDark(int ldrValue);
 byte calculateAutomaticBrightness(int ldrValue);
-void updateBreathingMode();
+void resetAutomaticModeState();
+void updateBreathing478Mode();
 void updateManualMode();
 void updateDebugSerial();
 void printDebugStatus();
 const __FlashStringHelper *currentModeName();
+const __FlashStringHelper *breathingPhaseName();
+const __FlashStringHelper *automaticStateName();
 
 void setup() {
   setupPins();
   setupDebugSerial();
+  resetAutomaticModeState();
 
-  if (DEBUG_SERIAL_ENABLED) {
+  if (debugSerialReady) {
     Serial.println(F("LumenBABY iniciado em modo automatico."));
   }
 }
@@ -128,6 +180,7 @@ void setup() {
 void loop() {
   updateButtons();
   updateCurrentMode();
+  updateLedFade();
   updateDebugSerial();
 }
 
@@ -145,18 +198,10 @@ void setupDebugSerial() {
     Serial.begin(SERIAL_BAUD_RATE);
     debugSerialReady = true;
     Serial.println(F("LumenBABY diagnostico Serial ativo."));
-    Serial.println(F("Etapa 04: validacao de baixa potencia."));
-    Serial.println(F("Usar somente MOSFET com LED simples e resistor."));
+    Serial.println(F("Etapa 05: refinamento dos efeitos com LED simples."));
     Serial.println(F("Sem fita LED, MT3608, TP4056, baterias ou fonte externa."));
     Serial.println(F("Botoes: INPUT_PULLUP, pressionado = LOW."));
-    Serial.println(F("Observe LDR claro/escuro para calibrar o limiar depois."));
-    Serial.print(F("Saida PWM D9: "));
-
-    if (LED_PWM_OUTPUT_INVERTED) {
-      Serial.println(F("invertida"));
-    } else {
-      Serial.println(F("normal"));
-    }
+    Serial.println(F("Saida PWM D9: normal."));
   }
 }
 
@@ -173,10 +218,13 @@ void updateButtons() {
     handleModeButtonPressed();
   }
 
-  if (brightnessButton.pressedEvent) {
-    brightnessButton.pressedEvent = false;
-    handleBrightnessButtonPressed();
+  if (brightnessButton.releasedEvent) {
+    brightnessButton.releasedEvent = false;
+    handleBrightnessButtonReleased();
   }
+
+  brightnessButton.pressedEvent = false;
+  modeButton.releasedEvent = false;
 }
 
 void updateButton(DebouncedButton &button) {
@@ -188,16 +236,33 @@ void updateButton(DebouncedButton &button) {
     button.lastReading = reading;
   }
 
-  if ((now - button.lastChangeTime) >= DEBOUNCE_TIME_MS) {
-    if (reading != button.stableState) {
-      button.stableState = reading;
-
-      // Com INPUT_PULLUP, o botão pressionado é lido como LOW.
-      if (button.stableState == LOW) {
-        button.pressedEvent = true;
-      }
-    }
+  if ((now - button.lastChangeTime) < DEBOUNCE_TIME_MS) {
+    return;
   }
+
+  if (reading == button.stableState) {
+    return;
+  }
+
+  button.stableState = reading;
+
+  if (button.stableState == LOW) {
+    button.isPressed = true;
+    button.pressedStartTime = now;
+    button.pressedEvent = true;
+  } else {
+    if (button.isPressed) {
+      button.lastPressDuration = now - button.pressedStartTime;
+      button.releasedEvent = true;
+    }
+
+    button.isPressed = false;
+  }
+}
+
+void clearButtonEvents(DebouncedButton &button) {
+  button.pressedEvent = false;
+  button.releasedEvent = false;
 }
 
 void handleModeButtonPressed() {
@@ -209,46 +274,174 @@ void handleModeButtonPressed() {
     currentMode = MODE_AUTO;
   }
 
-  if (DEBUG_SERIAL_ENABLED) {
+  handleModeChanged();
+
+  if (debugSerialReady) {
     Serial.print(F("Modo alterado para: "));
     Serial.println(currentModeName());
   }
 }
 
-void handleBrightnessButtonPressed() {
+void handleBrightnessButtonReleased() {
   if (currentMode != MODE_MANUAL) {
+    resetManualHoldState();
     return;
   }
 
+  if (manualHoldWasActiveOnThisPress) {
+    manualHoldDirection = -manualHoldDirection;
+    manualBrightnessIndex = findNearestManualBrightnessIndex(currentLedBrightness);
+    resetManualHoldState();
+    return;
+  }
+
+  if (brightnessButton.lastPressDuration < MANUAL_SHORT_PRESS_MAX_MS) {
+    handleBrightnessButtonPressed();
+  }
+}
+
+void handleBrightnessButtonPressed() {
   manualBrightnessIndex++;
 
   if (manualBrightnessIndex >= MANUAL_BRIGHTNESS_LEVEL_COUNT) {
     manualBrightnessIndex = 0;
   }
 
-  if (DEBUG_SERIAL_ENABLED) {
-    Serial.print(F("Nivel manual de brilho: "));
+  requestLedBrightness(
+    MANUAL_BRIGHTNESS_LEVELS[manualBrightnessIndex],
+    MANUAL_LEVEL_FADE_DURATION_MS
+  );
+
+  if (debugSerialReady) {
+    Serial.print(F("Nivel manual: "));
     Serial.println(manualBrightnessIndex);
   }
 }
 
+void updateManualButtonHold() {
+  if (!brightnessButton.isPressed) {
+    return;
+  }
+
+  unsigned long now = millis();
+  unsigned long heldTime = now - brightnessButton.pressedStartTime;
+
+  if (heldTime < MANUAL_HOLD_START_MS) {
+    return;
+  }
+
+  if (!manualHoldActive) {
+    manualHoldActive = true;
+    manualHoldWasActiveOnThisPress = true;
+    lastManualHoldStepTime = 0;
+    cancelLedFade();
+  }
+
+  if ((now - lastManualHoldStepTime) < MANUAL_HOLD_STEP_TIME_MS) {
+    return;
+  }
+
+  lastManualHoldStepTime = now;
+
+  int nextBrightness =
+    currentLedBrightness + (manualHoldDirection * MANUAL_HOLD_STEP_AMOUNT);
+
+  if (nextBrightness > MANUAL_BRIGHTNESS_LEVELS[MANUAL_BRIGHTNESS_LEVEL_COUNT - 1]) {
+    nextBrightness = MANUAL_BRIGHTNESS_LEVELS[MANUAL_BRIGHTNESS_LEVEL_COUNT - 1];
+  }
+
+  if (nextBrightness < MANUAL_BRIGHTNESS_LEVELS[0]) {
+    nextBrightness = MANUAL_BRIGHTNESS_LEVELS[0];
+  }
+
+  applyLedBrightness(nextBrightness);
+}
+
+void resetManualHoldState() {
+  manualHoldActive = false;
+  manualHoldWasActiveOnThisPress = false;
+  clearButtonEvents(brightnessButton);
+}
+
+byte findNearestManualBrightnessIndex(byte brightness) {
+  byte nearestIndex = 0;
+  int nearestDistance = 300;
+
+  for (byte i = 0; i < MANUAL_BRIGHTNESS_LEVEL_COUNT; i++) {
+    int distance = brightness > MANUAL_BRIGHTNESS_LEVELS[i]
+      ? brightness - MANUAL_BRIGHTNESS_LEVELS[i]
+      : MANUAL_BRIGHTNESS_LEVELS[i] - brightness;
+
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestIndex = i;
+    }
+  }
+
+  return nearestIndex;
+}
+
+void requestLedBrightness(byte targetBrightness, unsigned long durationMs) {
+  ledFadeTargetBrightness = targetBrightness;
+
+  if (durationMs == 0 || currentLedBrightness == targetBrightness) {
+    ledFadeActive = false;
+    applyLedBrightness(targetBrightness);
+    return;
+  }
+
+  ledFadeStartBrightness = currentLedBrightness;
+  ledFadeStartTime = millis();
+  ledFadeDuration = durationMs;
+  ledFadeActive = true;
+}
+
+void updateLedFade() {
+  if (!ledFadeActive) {
+    return;
+  }
+
+  unsigned long elapsed = millis() - ledFadeStartTime;
+
+  if (elapsed >= ledFadeDuration) {
+    ledFadeActive = false;
+    applyLedBrightness(ledFadeTargetBrightness);
+    return;
+  }
+
+  byte easedProgress = easeInOutByte(elapsed, ledFadeDuration);
+  long brightnessRange = (long)ledFadeTargetBrightness - ledFadeStartBrightness;
+  int nextBrightness =
+    ledFadeStartBrightness + ((brightnessRange * easedProgress) / 255);
+
+  applyLedBrightness(nextBrightness);
+}
+
+byte easeInOutByte(unsigned long elapsedMs, unsigned long durationMs) {
+  if (durationMs == 0 || elapsedMs >= durationMs) {
+    return 255;
+  }
+
+  unsigned long progress = (elapsedMs * 255UL) / durationMs;
+  unsigned long eased =
+    (progress * progress * (3UL * 255UL - 2UL * progress)) / (255UL * 255UL);
+
+  return eased;
+}
+
+void cancelLedFade() {
+  ledFadeActive = false;
+  ledFadeTargetBrightness = currentLedBrightness;
+}
+
 void applyLedBrightness(byte brightness) {
-  byte previousLedBrightness = currentLedBrightness;
-  byte previousPhysicalPwmOutput = currentPhysicalPwmOutput;
+  if (!ledFadeActive) {
+    ledFadeTargetBrightness = brightness;
+  }
 
   currentLedBrightness = brightness;
   currentPhysicalPwmOutput = logicalBrightnessToPhysicalPwm(currentLedBrightness);
   analogWrite(LED_PWM_PIN, currentPhysicalPwmOutput);
-
-  if (debugSerialReady &&
-      (previousLedBrightness != currentLedBrightness ||
-       previousPhysicalPwmOutput != currentPhysicalPwmOutput) &&
-      currentMode != MODE_BREATHING) {
-    Serial.print(F("PWM D9 aplicado | brilho logico: "));
-    Serial.print(currentLedBrightness);
-    Serial.print(F(" | PWM fisico: "));
-    Serial.println(currentPhysicalPwmOutput);
-  }
 }
 
 byte logicalBrightnessToPhysicalPwm(byte logicalBrightness) {
@@ -263,24 +456,76 @@ void updateCurrentMode() {
   if (currentMode == MODE_AUTO) {
     updateAutomaticMode();
   } else if (currentMode == MODE_BREATHING) {
-    updateBreathingMode();
+    updateBreathing478Mode();
   } else {
     updateManualMode();
   }
 }
 
+void handleModeChanged() {
+  resetManualHoldState();
+
+  if (currentMode == MODE_AUTO) {
+    resetAutomaticModeState();
+  } else if (currentMode == MODE_BREATHING) {
+    cancelLedFade();
+    breathingCycleStartTime = millis();
+    lastBreathingUpdateTime = 0;
+    currentBreathingPhase = BREATHING_PHASE_INHALE;
+  } else {
+    requestLedBrightness(
+      MANUAL_BRIGHTNESS_LEVELS[manualBrightnessIndex],
+      MANUAL_LEVEL_FADE_DURATION_MS
+    );
+  }
+}
+
 void updateAutomaticMode() {
+  updateAutomaticTarget();
+}
+
+void updateAutomaticTarget() {
   int ldrValue = readLdr();
-  byte targetBrightness = calculateAutomaticBrightness(ldrValue);
+  bool environmentDark = determineAutomaticEnvironmentDark(ldrValue);
+  unsigned long now = millis();
 
   lastAutomaticLdrValue = ldrValue;
-  lastAutomaticEnvironmentDark = isEnvironmentDark(ldrValue);
-  lastAutomaticTargetBrightness = targetBrightness;
+  lastAutomaticEnvironmentDark = environmentDark;
 
-  applyLedBrightness(targetBrightness);
+  if (environmentDark == automaticStableEnvironmentDark) {
+    automaticPendingTransition = false;
+    return;
+  }
+
+  if (!automaticPendingTransition ||
+      automaticPendingEnvironmentDark != environmentDark) {
+    automaticPendingTransition = true;
+    automaticPendingEnvironmentDark = environmentDark;
+    automaticPendingStartTime = now;
+    return;
+  }
+
+  if ((now - automaticPendingStartTime) < AUTOMATIC_RESPONSE_DELAY_MS) {
+    return;
+  }
+
+  automaticStableEnvironmentDark = environmentDark;
+  automaticPendingTransition = false;
+  lastAutomaticTargetBrightness = automaticStableEnvironmentDark
+    ? AUTOMATIC_BRIGHTNESS
+    : 0;
+  requestLedBrightness(lastAutomaticTargetBrightness, AUTOMATIC_FADE_DURATION_MS);
 }
 
 bool isEnvironmentDark(int ldrValue) {
+  return ldrValue < LDR_DARK_THRESHOLD;
+}
+
+bool determineAutomaticEnvironmentDark(int ldrValue) {
+  if (automaticStableEnvironmentDark) {
+    return ldrValue <= LDR_LIGHT_THRESHOLD;
+  }
+
   return ldrValue < LDR_DARK_THRESHOLD;
 }
 
@@ -292,35 +537,70 @@ byte calculateAutomaticBrightness(int ldrValue) {
   return 0;
 }
 
-void updateBreathingMode() {
+void resetAutomaticModeState() {
+  int ldrValue = readLdr();
+  bool environmentDark = isEnvironmentDark(ldrValue);
+  byte targetBrightness = calculateAutomaticBrightness(ldrValue);
+
+  // Só força uma transição inicial se o brilho atual ainda não combina com o LDR.
+  if (currentLedBrightness == targetBrightness) {
+    automaticStableEnvironmentDark = environmentDark;
+  } else {
+    automaticStableEnvironmentDark = !environmentDark;
+  }
+
+  automaticPendingTransition = false;
+  lastAutomaticLdrValue = ldrValue;
+  lastAutomaticEnvironmentDark = environmentDark;
+  lastAutomaticTargetBrightness = targetBrightness;
+}
+
+void updateBreathing478Mode() {
   unsigned long now = millis();
 
-  if ((now - lastBreathingStepTime) < BREATHING_STEP_TIME_MS) {
+  if ((now - lastBreathingUpdateTime) < BREATHING_UPDATE_INTERVAL_MS) {
     return;
   }
 
-  lastBreathingStepTime = now;
+  lastBreathingUpdateTime = now;
 
-  int nextBrightness = breathingBrightness + breathingDirection;
+  unsigned long cycleDuration =
+    BREATHING_INHALE_MS + BREATHING_HOLD_MS + BREATHING_EXHALE_MS;
+  unsigned long cyclePosition = (now - breathingCycleStartTime) % cycleDuration;
+  byte brightness = BREATHING_MIN_BRIGHTNESS;
 
-  if (nextBrightness >= BREATHING_MAX_BRIGHTNESS) {
-    nextBrightness = BREATHING_MAX_BRIGHTNESS;
-    breathingDirection = -1;
-  } else if (nextBrightness <= BREATHING_MIN_BRIGHTNESS) {
-    nextBrightness = BREATHING_MIN_BRIGHTNESS;
-    breathingDirection = 1;
+  if (cyclePosition < BREATHING_INHALE_MS) {
+    currentBreathingPhase = BREATHING_PHASE_INHALE;
+    byte progress = easeInOutByte(cyclePosition, BREATHING_INHALE_MS);
+    brightness = BREATHING_MIN_BRIGHTNESS +
+      ((((unsigned long)BREATHING_MAX_BRIGHTNESS - BREATHING_MIN_BRIGHTNESS) *
+        progress) / 255);
+  } else if (cyclePosition < (BREATHING_INHALE_MS + BREATHING_HOLD_MS)) {
+    currentBreathingPhase = BREATHING_PHASE_HOLD;
+    brightness = BREATHING_MAX_BRIGHTNESS;
+  } else {
+    currentBreathingPhase = BREATHING_PHASE_EXHALE;
+    unsigned long exhalePosition =
+      cyclePosition - BREATHING_INHALE_MS - BREATHING_HOLD_MS;
+    byte progress = easeInOutByte(exhalePosition, BREATHING_EXHALE_MS);
+    brightness = BREATHING_MAX_BRIGHTNESS -
+      ((((unsigned long)BREATHING_MAX_BRIGHTNESS - BREATHING_MIN_BRIGHTNESS) *
+        progress) / 255);
   }
 
-  breathingBrightness = nextBrightness;
-  applyLedBrightness(breathingBrightness);
+  applyLedBrightness(brightness);
 }
 
 void updateManualMode() {
-  applyLedBrightness(manualBrightnessLevels[manualBrightnessIndex]);
+  updateManualButtonHold();
 }
 
 void updateDebugSerial() {
   if (!debugSerialReady) {
+    return;
+  }
+
+  if (ledFadeActive) {
     return;
   }
 
@@ -336,6 +616,9 @@ void updateDebugSerial() {
 
 void printDebugStatus() {
   int ldrValue = readLdr();
+  bool displayedEnvironmentDark = currentMode == MODE_AUTO
+    ? determineAutomaticEnvironmentDark(ldrValue)
+    : isEnvironmentDark(ldrValue);
 
   Serial.print(F("Modo: "));
   Serial.print(currentModeName());
@@ -343,16 +626,20 @@ void printDebugStatus() {
   Serial.print(ldrValue);
   Serial.print(F(" | Limiar LDR: "));
   Serial.print(LDR_DARK_THRESHOLD);
+  Serial.print(F("/"));
+  Serial.print(LDR_LIGHT_THRESHOLD);
   Serial.print(F(" | Ambiente: "));
 
-  if (isEnvironmentDark(ldrValue)) {
+  if (displayedEnvironmentDark) {
     Serial.print(F("escuro"));
   } else {
     Serial.print(F("claro"));
   }
 
-  Serial.print(F(" | Brilho logico D9: "));
+  Serial.print(F(" | Brilho logico: "));
   Serial.print(currentLedBrightness);
+  Serial.print(F(" | Alvo: "));
+  Serial.print(ledFadeTargetBrightness);
   Serial.print(F(" | PWM fisico D9: "));
   Serial.print(currentPhysicalPwmOutput);
   Serial.print(F(" | Saida PWM: "));
@@ -363,24 +650,19 @@ void printDebugStatus() {
     Serial.print(F("normal"));
   }
 
-  Serial.print(F(" | Brilho manual indice: "));
+  Serial.print(F(" | Manual indice: "));
   Serial.print(manualBrightnessIndex);
 
   if (currentMode == MODE_AUTO) {
-    Serial.print(F(" | LDR usado no automatico: "));
-    Serial.print(lastAutomaticLdrValue);
-    Serial.print(F(" | Ambiente automatico: "));
-
-    if (lastAutomaticEnvironmentDark) {
-      Serial.print(F("escuro"));
-    } else {
-      Serial.print(F("claro"));
-    }
-
-    Serial.print(F(" | Brilho alvo automatico: "));
+    Serial.print(F(" | Auto: "));
+    Serial.print(automaticStateName());
+    Serial.print(F(" | Auto alvo: "));
     Serial.print(lastAutomaticTargetBrightness);
-    Serial.print(F(" | PWM fisico aplicado: "));
-    Serial.print(currentPhysicalPwmOutput);
+  }
+
+  if (currentMode == MODE_BREATHING) {
+    Serial.print(F(" | Respiracao 4-7-8: "));
+    Serial.print(breathingPhaseName());
   }
 
   Serial.println(F(" | Botoes INPUT_PULLUP: pressionado = LOW"));
@@ -396,4 +678,28 @@ const __FlashStringHelper *currentModeName() {
   }
 
   return F("manual");
+}
+
+const __FlashStringHelper *breathingPhaseName() {
+  if (currentBreathingPhase == BREATHING_PHASE_INHALE) {
+    return F("inspiracao");
+  }
+
+  if (currentBreathingPhase == BREATHING_PHASE_HOLD) {
+    return F("retencao");
+  }
+
+  return F("expiracao");
+}
+
+const __FlashStringHelper *automaticStateName() {
+  if (automaticPendingTransition) {
+    return F("aguardando atraso");
+  }
+
+  if (ledFadeActive) {
+    return F("fade ativo");
+  }
+
+  return F("estavel");
 }
