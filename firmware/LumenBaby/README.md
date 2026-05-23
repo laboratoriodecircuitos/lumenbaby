@@ -38,6 +38,29 @@ Nesta validação, não conectar MOSFET, fita LED, MT3608, TP4056, baterias 1865
 ou fonte externa de 12 V. O debug Serial está ativo para bancada inicial e pode
 ser desativado em etapa futura.
 
+## Diagnóstico da Etapa 04
+
+Durante a validação de baixa potência com MOSFET e LED comum com resistor de
+1 kΩ, o Monitor Serial pode mostrar LDR, limiar, ambiente claro/escuro, PWM alvo
+do modo automático e PWM efetivamente aplicado no D9.
+
+Nesta etapa foi adicionada uma configuração para saída PWM invertida:
+`LED_PWM_OUTPUT_INVERTED`.
+
+O firmware diferencia brilho lógico de PWM físico. Brilho lógico 0 sempre
+significa apagado para a lógica dos modos, mesmo que o PWM físico precise ser
+invertido na montagem de teste.
+
+Para o teste atual com MOSFET e LED simples, `LED_PWM_OUTPUT_INVERTED` voltou
+para `false`. Assim, o PWM físico segue o brilho lógico: 0 fica apagado, e
+valores maiores aumentam o brilho.
+
+A constante `LED_PWM_OUTPUT_INVERTED` deve ser revisada conforme a montagem
+final do MOSFET e da iluminação.
+
+O limiar do LDR ainda deve ser calibrado observando leituras reais de ambiente
+claro e escuro. Ainda não houve validação com fita LED 12 V.
+
 ## Objetivo do firmware
 
 Criar uma base inicial segura, simples e didática para controlar a luminária
@@ -87,12 +110,13 @@ O botão de brilho só altera o nível quando o firmware está em modo manual.
 
 ## Inicialização segura
 
-O firmware configura o pino PWM dos LEDs como saída e escreve PWM 0 logo no
-início do `setup()`.
+O firmware configura o pino PWM dos LEDs como saída e aplica brilho lógico 0
+logo no início do `setup()`.
 
-Esse cuidado ajuda a manter o MOSFET desligado durante a inicialização do
-Arduino. Mesmo assim, o hardware também deve manter o resistor pull-down de
-10 kΩ no gate do MOSFET.
+Esse brilho lógico é convertido para o PWM físico correto conforme
+`LED_PWM_OUTPUT_INVERTED`. O objetivo é manter o MOSFET desligado durante a
+inicialização do Arduino. Mesmo assim, o hardware também deve manter o resistor
+pull-down de 10 kΩ no gate do MOSFET.
 
 ## Debug Serial
 

@@ -6,6 +6,7 @@ Testes previstos:
 
 - teste de compilação no Arduino IDE;
 - teste controlado do Arduino sem carga de potência;
+- teste elétrico controlado do MOSFET com LED simples;
 - teste de leitura do LDR;
 - teste de PWM da fita LED;
 - teste de fade in e fade out;
@@ -21,6 +22,7 @@ Testes previstos:
 
 - [Teste 0001 — Compilação no Arduino IDE](0001_compilacao_arduino_ide.md)
 - [Teste 0002 — Validação controlada do Arduino sem carga de potência](0002_validacao_controlada_arduino_sem_carga.md)
+- [Teste 0003 — Validação elétrica controlada do MOSFET com LED simples](0003_validacao_mosfet_led_simples.md)
 
 Cada teste deve registrar:
 
