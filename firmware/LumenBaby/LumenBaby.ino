@@ -191,6 +191,11 @@ void scheduleBrightnessSettingsSave();
 void updateBrightnessSettingsSave();
 void saveBrightnessSettingsToEeprom();
 bool isValidBrightnessIndex(byte index);
+byte sanitizeBrightnessIndex(byte index, byte fallbackIndex);
+byte sanitizeLogicalBrightness(int logicalBrightness);
+void forceLedOff();
+void resetAutomaticPendingState();
+int getEffectiveLdrLightThreshold();
 int readLdr();
 void updateButtons();
 void updateButton(DebouncedButton &button);
@@ -212,7 +217,7 @@ void requestLedBrightness(byte targetBrightness, unsigned long durationMs);
 void updateLedFade();
 byte easeInOutByte(unsigned long elapsedMs, unsigned long durationMs);
 void cancelLedFade();
-void applyLedBrightness(byte brightness);
+void applyLedBrightness(int brightness);
 byte logicalBrightnessToPhysicalPwm(byte logicalBrightness);
 void updateCurrentMode();
 void handleModeChanged();
@@ -252,7 +257,7 @@ void loop() {
 void setupPins() {
   // Estado seguro: a saída do MOSFET é configurada e recebe brilho lógico 0.
   pinMode(LED_PWM_PIN, OUTPUT);
-  applyLedBrightness(0);
+  forceLedOff();
 
   pinMode(MODE_BUTTON_PIN, INPUT_PULLUP);
   pinMode(BRIGHTNESS_BUTTON_PIN, INPUT_PULLUP);
@@ -263,10 +268,14 @@ void setupDebugSerial() {
     Serial.begin(SERIAL_BAUD_RATE);
     debugSerialReady = true;
     Serial.println(F("LumenBABY diagnostico Serial ativo."));
-    Serial.println(F("Etapa 06: brilho manual e automatico persistidos na EEPROM."));
+    Serial.println(F("Etapa 07: reforcos defensivos de seguranca no firmware."));
     Serial.println(F("Sem fita LED, MT3608, TP4056, baterias ou fonte externa."));
     Serial.println(F("Botoes: INPUT_PULLUP, pressionado = LOW."));
     Serial.println(F("Saida PWM D9: normal."));
+
+    if (LDR_LIGHT_THRESHOLD <= LDR_DARK_THRESHOLD) {
+      Serial.println(F("Aviso: limiares LDR ajustados para comportamento previsivel."));
+    }
   }
 }
 
@@ -285,8 +294,14 @@ void loadBrightnessSettingsFromEeprom() {
     isValidBrightnessIndex(storedManualBrightnessIndex);
 
   if (storedSettingsValid) {
-    automaticBrightnessIndex = storedAutomaticBrightnessIndex;
-    manualBrightnessIndex = storedManualBrightnessIndex;
+    automaticBrightnessIndex = sanitizeBrightnessIndex(
+      storedAutomaticBrightnessIndex,
+      DEFAULT_AUTOMATIC_BRIGHTNESS_INDEX
+    );
+    manualBrightnessIndex = sanitizeBrightnessIndex(
+      storedManualBrightnessIndex,
+      DEFAULT_MANUAL_BRIGHTNESS_INDEX
+    );
 
     if (debugSerialReady) {
       Serial.print(F("EEPROM carregada. Auto indice: "));
@@ -298,8 +313,14 @@ void loadBrightnessSettingsFromEeprom() {
     return;
   }
 
-  automaticBrightnessIndex = DEFAULT_AUTOMATIC_BRIGHTNESS_INDEX;
-  manualBrightnessIndex = DEFAULT_MANUAL_BRIGHTNESS_INDEX;
+  automaticBrightnessIndex = sanitizeBrightnessIndex(
+    DEFAULT_AUTOMATIC_BRIGHTNESS_INDEX,
+    0
+  );
+  manualBrightnessIndex = sanitizeBrightnessIndex(
+    DEFAULT_MANUAL_BRIGHTNESS_INDEX,
+    0
+  );
   scheduleBrightnessSettingsSave();
 
   if (debugSerialReady) {
@@ -335,6 +356,15 @@ void updateBrightnessSettingsSave() {
 }
 
 void saveBrightnessSettingsToEeprom() {
+  automaticBrightnessIndex = sanitizeBrightnessIndex(
+    automaticBrightnessIndex,
+    DEFAULT_AUTOMATIC_BRIGHTNESS_INDEX
+  );
+  manualBrightnessIndex = sanitizeBrightnessIndex(
+    manualBrightnessIndex,
+    DEFAULT_MANUAL_BRIGHTNESS_INDEX
+  );
+
   EEPROM.update(EEPROM_MAGIC_ADDRESS, EEPROM_MAGIC);
   EEPROM.update(EEPROM_VERSION_ADDRESS, EEPROM_DATA_VERSION);
   EEPROM.update(
@@ -355,6 +385,54 @@ void saveBrightnessSettingsToEeprom() {
 
 bool isValidBrightnessIndex(byte index) {
   return index < BRIGHTNESS_LEVEL_COUNT;
+}
+
+byte sanitizeBrightnessIndex(byte index, byte fallbackIndex) {
+  if (isValidBrightnessIndex(index)) {
+    return index;
+  }
+
+  if (isValidBrightnessIndex(fallbackIndex)) {
+    return fallbackIndex;
+  }
+
+  return 0;
+}
+
+byte sanitizeLogicalBrightness(int logicalBrightness) {
+  // Mantem a intencao explicita: brilho logico valido fica sempre em 0-255.
+  if (logicalBrightness < 0) {
+    return 0;
+  }
+
+  if (logicalBrightness > 255) {
+    return 255;
+  }
+
+  return (byte)logicalBrightness;
+}
+
+void forceLedOff() {
+  ledFadeActive = false;
+  ledFadeStartBrightness = 0;
+  ledFadeTargetBrightness = 0;
+  currentLedBrightness = 0;
+  currentPhysicalPwmOutput = logicalBrightnessToPhysicalPwm(0);
+  analogWrite(LED_PWM_PIN, currentPhysicalPwmOutput);
+}
+
+void resetAutomaticPendingState() {
+  automaticPendingTransition = false;
+  automaticPendingEnvironmentDark = false;
+  automaticPendingStartTime = 0;
+}
+
+int getEffectiveLdrLightThreshold() {
+  if (LDR_LIGHT_THRESHOLD > LDR_DARK_THRESHOLD) {
+    return LDR_LIGHT_THRESHOLD;
+  }
+
+  return LDR_DARK_THRESHOLD;
 }
 
 int readLdr() {
@@ -470,6 +548,10 @@ void handleBrightnessButtonShortPress() {
 }
 
 void handleManualBrightnessShortPress() {
+  manualBrightnessIndex = sanitizeBrightnessIndex(
+    manualBrightnessIndex,
+    DEFAULT_MANUAL_BRIGHTNESS_INDEX
+  );
   manualBrightnessIndex++;
 
   if (manualBrightnessIndex >= BRIGHTNESS_LEVEL_COUNT) {
@@ -489,6 +571,10 @@ void handleManualBrightnessShortPress() {
 }
 
 void handleAutomaticBrightnessShortPress() {
+  automaticBrightnessIndex = sanitizeBrightnessIndex(
+    automaticBrightnessIndex,
+    DEFAULT_AUTOMATIC_BRIGHTNESS_INDEX
+  );
   automaticBrightnessIndex++;
 
   if (automaticBrightnessIndex >= BRIGHTNESS_LEVEL_COUNT) {
@@ -570,6 +656,10 @@ bool isBrightnessControlMode() {
 }
 
 byte getAutomaticTargetBrightness() {
+  automaticBrightnessIndex = sanitizeBrightnessIndex(
+    automaticBrightnessIndex,
+    DEFAULT_AUTOMATIC_BRIGHTNESS_INDEX
+  );
   return BRIGHTNESS_LEVELS[automaticBrightnessIndex];
 }
 
@@ -583,7 +673,10 @@ byte getBrightnessHoldStartValue() {
 
 void applyBrightnessHoldValue(byte brightness) {
   if (currentMode == MODE_AUTO) {
-    automaticBrightnessIndex = findNearestBrightnessIndex(brightness);
+    automaticBrightnessIndex = sanitizeBrightnessIndex(
+      findNearestBrightnessIndex(brightness),
+      DEFAULT_AUTOMATIC_BRIGHTNESS_INDEX
+    );
     lastAutomaticTargetBrightness = getAutomaticTargetBrightness();
 
     if (automaticStableEnvironmentDark) {
@@ -598,12 +691,18 @@ void applyBrightnessHoldValue(byte brightness) {
 
 void syncActiveBrightnessIndex(byte brightness) {
   if (currentMode == MODE_AUTO) {
-    automaticBrightnessIndex = findNearestBrightnessIndex(brightness);
+    automaticBrightnessIndex = sanitizeBrightnessIndex(
+      findNearestBrightnessIndex(brightness),
+      DEFAULT_AUTOMATIC_BRIGHTNESS_INDEX
+    );
     lastAutomaticTargetBrightness = getAutomaticTargetBrightness();
     return;
   }
 
-  manualBrightnessIndex = findNearestBrightnessIndex(brightness);
+  manualBrightnessIndex = sanitizeBrightnessIndex(
+    findNearestBrightnessIndex(brightness),
+    DEFAULT_MANUAL_BRIGHTNESS_INDEX
+  );
 }
 
 byte findNearestBrightnessIndex(byte brightness) {
@@ -625,6 +724,7 @@ byte findNearestBrightnessIndex(byte brightness) {
 }
 
 void requestLedBrightness(byte targetBrightness, unsigned long durationMs) {
+  targetBrightness = sanitizeLogicalBrightness(targetBrightness);
   ledFadeTargetBrightness = targetBrightness;
 
   if (durationMs == 0 || currentLedBrightness == targetBrightness) {
@@ -677,12 +777,14 @@ void cancelLedFade() {
   ledFadeTargetBrightness = currentLedBrightness;
 }
 
-void applyLedBrightness(byte brightness) {
+void applyLedBrightness(int brightness) {
+  byte safeBrightness = sanitizeLogicalBrightness(brightness);
+
   if (!ledFadeActive) {
-    ledFadeTargetBrightness = brightness;
+    ledFadeTargetBrightness = safeBrightness;
   }
 
-  currentLedBrightness = brightness;
+  currentLedBrightness = safeBrightness;
   currentPhysicalPwmOutput = logicalBrightnessToPhysicalPwm(currentLedBrightness);
   analogWrite(LED_PWM_PIN, currentPhysicalPwmOutput);
 }
@@ -707,6 +809,7 @@ void updateCurrentMode() {
 
 void handleModeChanged() {
   resetBrightnessHoldState();
+  resetAutomaticPendingState();
 
   if (currentMode == MODE_AUTO) {
     resetAutomaticModeState();
@@ -716,6 +819,10 @@ void handleModeChanged() {
     lastBreathingUpdateTime = 0;
     currentBreathingPhase = BREATHING_PHASE_INHALE;
   } else {
+    manualBrightnessIndex = sanitizeBrightnessIndex(
+      manualBrightnessIndex,
+      DEFAULT_MANUAL_BRIGHTNESS_INDEX
+    );
     requestLedBrightness(
       BRIGHTNESS_LEVELS[manualBrightnessIndex],
       MANUAL_LEVEL_FADE_DURATION_MS
@@ -737,7 +844,7 @@ void updateAutomaticTarget() {
   lastAutomaticEnvironmentDark = environmentDark;
 
   if (environmentDark == automaticStableEnvironmentDark) {
-    automaticPendingTransition = false;
+    resetAutomaticPendingState();
     return;
   }
 
@@ -766,8 +873,10 @@ bool isEnvironmentDark(int ldrValue) {
 }
 
 bool determineAutomaticEnvironmentDark(int ldrValue) {
+  int effectiveLightThreshold = getEffectiveLdrLightThreshold();
+
   if (automaticStableEnvironmentDark) {
-    return ldrValue <= LDR_LIGHT_THRESHOLD;
+    return ldrValue <= effectiveLightThreshold;
   }
 
   return ldrValue < LDR_DARK_THRESHOLD;
@@ -793,7 +902,7 @@ void resetAutomaticModeState() {
     automaticStableEnvironmentDark = !environmentDark;
   }
 
-  automaticPendingTransition = false;
+  resetAutomaticPendingState();
   lastAutomaticLdrValue = ldrValue;
   lastAutomaticEnvironmentDark = environmentDark;
   lastAutomaticTargetBrightness = targetBrightness;
@@ -871,7 +980,7 @@ void printDebugStatus() {
   Serial.print(F(" | Limiar LDR: "));
   Serial.print(LDR_DARK_THRESHOLD);
   Serial.print(F("/"));
-  Serial.print(LDR_LIGHT_THRESHOLD);
+  Serial.print(getEffectiveLdrLightThreshold());
   Serial.print(F(" | Ambiente: "));
 
   if (displayedEnvironmentDark) {

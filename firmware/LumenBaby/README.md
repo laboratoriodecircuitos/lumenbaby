@@ -152,6 +152,32 @@ tenham o mesmo valor.
 
 O modo respiração não altera nem salva índices de brilho na EEPROM.
 
+## Reforços defensivos da Etapa 07
+
+Na Etapa 07, o firmware recebeu reforços de segurança e previsibilidade sem
+adicionar novos recursos de usuário e sem alterar a experiência visual já
+validada.
+
+A inicialização foi reforçada para configurar o pino PWM dos LEDs como saída e
+forçar brilho lógico 0 logo no início, usando a mesma conversão entre brilho
+lógico e PWM físico. A aplicação de brilho também passa por uma proteção
+defensiva para manter valores lógicos dentro da faixa 0-255.
+
+Os índices de brilho manual e automático são sanitizados antes de acessar a
+tabela de 10 níveis, inclusive ao carregar EEPROM, ao salvar EEPROM, ao trocar
+de modo e ao sincronizar o valor final de um ajuste por pressionar/segurar. Se a
+EEPROM estiver inválida, o firmware continua usando padrões seguros e grava
+esses padrões de forma agendada com `EEPROM.update()`.
+
+Ao trocar de modo, estados pendentes de botão, hold e transição automática são
+cancelados para evitar herança de estado incompatível. O modo respiração
+continua sem agendar gravação na EEPROM, e fades continuam sem gerar escrita.
+
+Esses reforços são proteções de firmware. Eles não substituem resistor
+pull-down no gate do MOSFET, fusível, proteção contra sobrecorrente, validação
+da fita LED 12 V, teste do MT3608, TP4056, baterias 18650, fonte externa ou
+qualquer ensaio real de carga de potência.
+
 ## Objetivo do firmware
 
 Criar uma base inicial segura, simples e didática para controlar a luminária
