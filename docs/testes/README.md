@@ -5,6 +5,7 @@ Esta pasta deve concentrar registros de testes do projeto.
 Testes previstos:
 
 - teste de compilação no Arduino IDE;
+- teste controlado do Arduino sem carga de potência;
 - teste de leitura do LDR;
 - teste de PWM da fita LED;
 - teste de fade in e fade out;
@@ -19,6 +20,7 @@ Testes previstos:
 ## Registros de teste
 
 - [Teste 0001 — Compilação no Arduino IDE](0001_compilacao_arduino_ide.md)
+- [Teste 0002 — Validação controlada do Arduino sem carga de potência](0002_validacao_controlada_arduino_sem_carga.md)
 
 Cada teste deve registrar:
 

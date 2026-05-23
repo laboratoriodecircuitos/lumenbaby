@@ -21,6 +21,23 @@ a ATmega328P 5V / 16 MHz.
 Nesta etapa, usar apenas Verificar/Compilar. Não usar Upload/Carregar e não
 conectar hardware físico.
 
+## Validação controlada sem carga de potência
+
+Na Etapa 03, o firmware pode ser carregado no Arduino Pro Mini apenas para
+validar o microcontrolador, a comunicação Serial, o LDR e os botões.
+
+No Arduino IDE, abrir `LumenBaby.ino`, selecionar Arduino Pro Mini e o
+processador equivalente a ATmega328P 5V / 16 MHz.
+
+Conectar somente o Arduino Pro Mini e o conversor USB-serial. Com
+`DEBUG_SERIAL_ENABLED` em `true`, abrir o Monitor Serial em 9600 baud para
+acompanhar o modo atual, a leitura do LDR, o PWM calculado para D9 e o índice
+de brilho manual.
+
+Nesta validação, não conectar MOSFET, fita LED, MT3608, TP4056, baterias 18650
+ou fonte externa de 12 V. O debug Serial está ativo para bancada inicial e pode
+ser desativado em etapa futura.
+
 ## Objetivo do firmware
 
 Criar uma base inicial segura, simples e didática para controlar a luminária
@@ -83,8 +100,9 @@ O código possui uma flag de depuração:
 
 `DEBUG_SERIAL_ENABLED`
 
-Por padrão, ela fica desativada. Se for necessário acompanhar mensagens pela
-Serial durante testes, altere a flag para `true`.
+Nesta etapa, ela fica ativada para a validação controlada sem carga de potência.
+Se não for necessário acompanhar mensagens pela Serial em etapa futura, altere
+a flag para `false`.
 
 ## Cuidados de teste em bancada
 

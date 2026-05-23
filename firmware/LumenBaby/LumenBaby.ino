@@ -10,8 +10,9 @@
 // Configurações principais
 // ---------------------------------------------------------------------------
 
-const bool DEBUG_SERIAL_ENABLED = false;
+const bool DEBUG_SERIAL_ENABLED = true;
 const unsigned long SERIAL_BAUD_RATE = 9600;
+const unsigned long DEBUG_REPORT_INTERVAL_MS = 1000;
 
 const byte LDR_PIN = A0;
 const byte MODE_BUTTON_PIN = 2;
@@ -81,6 +82,7 @@ byte currentLedBrightness = 0;
 byte breathingBrightness = BREATHING_MIN_BRIGHTNESS;
 int breathingDirection = 1;
 unsigned long lastBreathingStepTime = 0;
+unsigned long lastDebugReportTime = 0;
 
 void setupPins();
 void setupDebugSerial();
@@ -94,6 +96,8 @@ void updateCurrentMode();
 void updateAutomaticMode();
 void updateBreathingMode();
 void updateManualMode();
+void updateDebugSerial();
+void printDebugStatus();
 const __FlashStringHelper *currentModeName();
 
 void setup() {
@@ -108,6 +112,7 @@ void setup() {
 void loop() {
   updateButtons();
   updateCurrentMode();
+  updateDebugSerial();
 }
 
 void setupPins() {
@@ -123,6 +128,10 @@ void setupPins() {
 void setupDebugSerial() {
   if (DEBUG_SERIAL_ENABLED) {
     Serial.begin(SERIAL_BAUD_RATE);
+    Serial.println(F("LumenBABY diagnostico Serial ativo."));
+    Serial.println(F("Etapa 03: Arduino sem carga de potencia."));
+    Serial.println(F("Nao conectar MOSFET, fita LED, MT3608, TP4056 ou baterias."));
+    Serial.println(F("Botoes: INPUT_PULLUP, pressionado = LOW."));
   }
 }
 
@@ -250,6 +259,35 @@ void updateBreathingMode() {
 
 void updateManualMode() {
   applyLedBrightness(manualBrightnessLevels[manualBrightnessIndex]);
+}
+
+void updateDebugSerial() {
+  if (!DEBUG_SERIAL_ENABLED) {
+    return;
+  }
+
+  unsigned long now = millis();
+
+  if ((now - lastDebugReportTime) < DEBUG_REPORT_INTERVAL_MS) {
+    return;
+  }
+
+  lastDebugReportTime = now;
+  printDebugStatus();
+}
+
+void printDebugStatus() {
+  int ldrValue = readLdr();
+
+  Serial.print(F("Modo: "));
+  Serial.print(currentModeName());
+  Serial.print(F(" | LDR A0: "));
+  Serial.print(ldrValue);
+  Serial.print(F(" | PWM D9: "));
+  Serial.print(currentLedBrightness);
+  Serial.print(F(" | Brilho manual indice: "));
+  Serial.print(manualBrightnessIndex);
+  Serial.println(F(" | Botoes INPUT_PULLUP: pressionado = LOW"));
 }
 
 const __FlashStringHelper *currentModeName() {
