@@ -1,10 +1,42 @@
-// Projeto LumenBABY — Luminária Nuvem Inteligente
-// Marca: LumenSense
-// Plataforma alvo: Arduino Pro Mini 5V / 16 MHz
-//
-// Este arquivo é a base segura e didática do firmware,
-// respeitando o documento:
-// ../../docs/00_DOCUMENTO_INICIAL_LUMENBABY.md
+/*
+  LumenBABY — Luminária Nuvem Inteligente
+
+  Firmware da luminária decorativa infantil LumenBABY, primeiro produto da
+  marca LumenSense.
+
+  Controla uma fita LED por PWM via MOSFET, usando Arduino Pro Mini 5V / 16 MHz,
+  LDR e dois botões.
+
+  Modos principais:
+  - modo automático com LDR, atraso antes da resposta, histerese e fade-in /
+    fade-out suave;
+  - modo manual com 10 níveis de brilho e ajuste suave por botão pressionado;
+  - modo respiração com ciclo visual inspirado em 4-7-8.
+
+  Hardware-alvo e pinos principais:
+  - Arduino Pro Mini 5V / 16 MHz;
+  - LDR em A0;
+  - botão de modo em D2;
+  - botão de brilho em D3;
+  - PWM dos LEDs/MOSFET em D9.
+
+  Escopo e segurança:
+  - não comunicar como brinquedo, produto médico, monitor de bebê ou item de
+    segurança crítica;
+  - nesta fase, testes de potência real ainda devem ser feitos separadamente e
+    com cuidado.
+
+  Histórico:
+  - criado em 2026 por Rafael Albuquerque / Laboratório de Circuitos;
+  - refinado em 2026 para validações iniciais com Arduino Pro Mini, LDR, botões,
+    MOSFET e LED simples.
+
+  Este projeto é público para fins educacionais e documentais. Ver LICENSE.md
+  para detalhes.
+
+  Repositório:
+  https://github.com/laboratoriodecircuitos/lumenbaby
+*/
 
 // ---------------------------------------------------------------------------
 // Configurações principais
