@@ -91,6 +91,43 @@ Resultado: aprovado após correção e diagnóstico.
 - Os modos manual e respiração continuaram independentes do LDR.
 - O LDR ainda poderá precisar de calibração mais fina em etapa futura.
 
+## Observação complementar após correção do LDR
+
+Durante a validação, foi identificado um erro de montagem no divisor do LDR: o
+pino de 5 V estava ligado em um lado do LDR e o pino A0 acabou ficando na linha
+de 5 V. Isso causava leituras e comportamentos incorretos durante o diagnóstico.
+
+Após corrigir a montagem do divisor do LDR/A0, o teste final do modo automático
+ficou correto.
+
+Com luz:
+
+- LDR A0: 854;
+- limiar LDR: 450;
+- ambiente: claro;
+- brilho lógico D9: 0;
+- PWM físico D9: 0;
+- saída PWM: normal;
+- LED apagado.
+
+Sem luz:
+
+- LDR A0: 164;
+- limiar LDR: 450;
+- ambiente: escuro;
+- brilho lógico D9: 180;
+- PWM físico D9: 180;
+- saída PWM: normal;
+- LED aceso.
+
+Conclusão: o problema anterior não era baixa corrente do Arduino nem necessidade
+de inversão de PWM. O problema estava na ligação do divisor do LDR/A0. A saída
+correta permanece `LED_PWM_OUTPUT_INVERTED = false`.
+
+Esta observação continua limitada à validação de baixa potência com MOSFET e
+LED simples. Fita LED 12 V, MT3608, TP4056, baterias 18650 e fonte externa de
+12 V continuam fora desta etapa.
+
 ## Tentativa de saída invertida
 
 Foi feita uma tentativa experimental com `LED_PWM_OUTPUT_INVERTED = true`.
