@@ -1,40 +1,40 @@
 /*
+  ==============================================================================
   LumenBABY — Luminária Nuvem Inteligente
+  ==============================================================================
 
-  Firmware da luminária decorativa infantil LumenBABY, primeiro produto da
-  marca LumenSense.
+  Firmware principal da LumenBABY, luminária decorativa infantil em formato de
+  nuvem desenvolvida pela LumenSense.
 
-  Controla uma fita LED por PWM via MOSFET, usando Arduino Pro Mini 5V / 16 MHz,
-  LDR e dois botões.
+  O sistema controla uma fita LED por PWM através de MOSFET, utilizando leitura
+  de luminosidade ambiente por LDR e interface local com dois botões físicos.
 
-  Modos principais:
-  - modo automático com LDR, atraso antes da resposta, histerese e fade-in /
-    fade-out suave;
-  - modo manual com 10 níveis de brilho e ajuste suave por botão pressionado;
-  - modo respiração com ciclo visual inspirado em 4-7-8.
+  Funcionalidades principais:
+  - controle automático de iluminação com LDR;
+  - transições suaves de acendimento e apagamento;
+  - modo manual com múltiplos níveis de brilho;
+  - modo respiração com variação suave de intensidade;
+  - persistência de ajustes de brilho na EEPROM;
+  - inicialização em estado seguro com saída PWM desligada.
 
-  Hardware-alvo e pinos principais:
+  Hardware-alvo:
   - Arduino Pro Mini 5V / 16 MHz;
-  - LDR em A0;
-  - botão de modo em D2;
-  - botão de brilho em D3;
-  - PWM dos LEDs/MOSFET em D9.
+  - LDR no pino A0;
+  - botão de modo no pino D2;
+  - botão de brilho no pino D3;
+  - saída PWM para MOSFET no pino D9.
 
-  Escopo e segurança:
-  - não comunicar como brinquedo, produto médico, monitor de bebê ou item de
-    segurança crítica;
-  - nesta fase, testes de potência real ainda devem ser feitos separadamente e
-    com cuidado.
+  Aviso de uso:
+  Este firmware faz parte de um projeto educacional, documental e em validação.
+  A LumenBABY não deve ser apresentada como brinquedo, produto médico, monitor
+  de bebê ou dispositivo de segurança crítica.
 
-  Histórico:
-  - criado em 2026 por Rafael Albuquerque / Laboratório de Circuitos;
-  - refinado em 2026 para validações iniciais com Arduino Pro Mini, LDR, botões,
-    MOSFET e LED simples.
+  Autor:
+  Rafael Albuquerque — Laboratório de Circuitos
 
-  Este projeto é público para fins educacionais e documentais, sob a
-  LumenBABY Source Available License. Todos os direitos reservados.
-  Uso comercial, fabricação, redistribuição ou venda de produtos derivados
-  somente com autorização prévia por escrito. Ver LICENSE.md para detalhes.
+  Licença:
+  LumenBABY Source Available License.
+  Consulte o arquivo LICENSE.md para permissões e restrições de uso.
 
   Repositório:
   https://github.com/laboratoriodecircuitos/lumenbaby
@@ -344,6 +344,11 @@ void updateBrightnessSettingsSave() {
   unsigned long now = millis();
 
   if (brightnessButton.isPressed || brightnessHoldActive) {
+    brightnessSettingsSaveRequestTime = now;
+    return;
+  }
+
+  if (ledFadeActive || automaticPendingTransition) {
     brightnessSettingsSaveRequestTime = now;
     return;
   }
@@ -779,13 +784,19 @@ void cancelLedFade() {
 
 void applyLedBrightness(int brightness) {
   byte safeBrightness = sanitizeLogicalBrightness(brightness);
+  byte nextPhysicalPwmOutput = logicalBrightnessToPhysicalPwm(safeBrightness);
 
   if (!ledFadeActive) {
     ledFadeTargetBrightness = safeBrightness;
   }
 
   currentLedBrightness = safeBrightness;
-  currentPhysicalPwmOutput = logicalBrightnessToPhysicalPwm(currentLedBrightness);
+
+  if (nextPhysicalPwmOutput == currentPhysicalPwmOutput) {
+    return;
+  }
+
+  currentPhysicalPwmOutput = nextPhysicalPwmOutput;
   analogWrite(LED_PWM_PIN, currentPhysicalPwmOutput);
 }
 
@@ -954,6 +965,10 @@ void updateDebugSerial() {
   }
 
   if (ledFadeActive) {
+    return;
+  }
+
+  if (automaticPendingTransition) {
     return;
   }
 

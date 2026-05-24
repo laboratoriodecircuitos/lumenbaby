@@ -10,6 +10,7 @@ Testes previstos:
 - teste de refinamento dos efeitos de iluminação;
 - teste de persistência dos brilhos na EEPROM;
 - teste de reforços de segurança no firmware;
+- teste de varredura e refino seguro do firmware;
 - teste de leitura do LDR;
 - teste de PWM da fita LED;
 - teste de fade in e fade out;
@@ -29,6 +30,7 @@ Testes previstos:
 - [Teste 0004 — Refinamento dos efeitos de iluminação](0004_refinamento_efeitos_iluminacao.md)
 - [Teste 0005 — Persistência dos brilhos na EEPROM](0005_persistencia_brilho_eeprom.md)
 - [Teste 0006 — Reforços de segurança no firmware](0006_reforcos_seguranca_firmware.md)
+- [Teste 0007 — Varredura e refino seguro do firmware](0007_varredura_refino_firmware.md)
 
 Cada teste deve registrar:
 

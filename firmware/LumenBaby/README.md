@@ -178,6 +178,27 @@ pull-down no gate do MOSFET, fusível, proteção contra sobrecorrente, validaç
 da fita LED 12 V, teste do MT3608, TP4056, baterias 18650, fonte externa ou
 qualquer ensaio real de carga de potência.
 
+## Varredura e refino da Etapa 08
+
+Na Etapa 08, foi feita uma varredura geral do firmware com foco em fluidez do
+PWM, previsibilidade de estados e preservação do comportamento já validado.
+
+O firmware passou a evitar gravação de EEPROM enquanto houver fade ativo ou
+transição automática pendente. A gravação continua agendada e usando
+`EEPROM.update()`, mas fica adiada até um momento menos sensível. O relatório
+Serial longo também permanece pausado durante fades e agora evita a janela de
+transição pendente do modo automático.
+
+A aplicação de brilho foi refinada para não chamar `analogWrite()` quando o PWM
+físico calculado já é o mesmo valor aplicado. O brilho lógico continua sendo
+atualizado normalmente, preservando a separação entre brilho lógico e PWM
+físico.
+
+Esta etapa não altera timer, frequência de PWM, mapa de pinos, tabela de
+brilho, tempos de fade, ciclo 4-7-8, lógica dos botões ou persistência dos
+índices na EEPROM. Também não substitui testes reais com fita LED 12 V, MT3608,
+TP4056, baterias 18650, fonte externa de 12 V ou carga de potência.
+
 ## Objetivo do firmware
 
 Criar uma base inicial segura, simples e didática para controlar a luminária
